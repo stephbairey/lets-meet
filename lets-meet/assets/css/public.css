@@ -1,0 +1,428 @@
+/**
+ * Let's Meet — Public Styles
+ */
+
+/* ── Reset & base ─────────────────────────────────────────────── */
+
+.lm-booking-widget {
+	max-width: 640px;
+	margin: 0 auto;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+	font-size: 15px;
+	line-height: 1.5;
+	color: #1e1e1e;
+}
+
+.lm-booking-widget *,
+.lm-booking-widget *::before,
+.lm-booking-widget *::after {
+	box-sizing: border-box;
+}
+
+.lm-hidden {
+	display: none !important;
+}
+
+.lm-step--hidden {
+	display: none !important;
+}
+
+/* ── Step titles ──────────────────────────────────────────────── */
+
+.lm-step-title {
+	margin: 0 0 16px;
+	font-size: 18px;
+	font-weight: 600;
+}
+
+/* ── Step 1: Service selection ────────────────────────────────── */
+
+.lm-services-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-bottom: 20px;
+}
+
+.lm-service-option {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 12px 16px;
+	border: 2px solid #ddd;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: border-color 0.15s, background-color 0.15s;
+}
+
+.lm-service-option:hover {
+	border-color: #0073aa;
+	background-color: #f0f6fc;
+}
+
+.lm-service-option input[type="radio"] {
+	margin-top: 3px;
+	flex-shrink: 0;
+}
+
+.lm-service-option input[type="radio"]:checked + .lm-service-info {
+	color: #0073aa;
+}
+
+.lm-service-option:has(input:checked) {
+	border-color: #0073aa;
+	background-color: #f0f6fc;
+}
+
+.lm-service-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.lm-service-name {
+	font-weight: 600;
+	font-size: 15px;
+}
+
+.lm-service-duration {
+	font-size: 13px;
+	color: #646970;
+}
+
+.lm-service-desc {
+	font-size: 13px;
+	color: #646970;
+	margin-top: 2px;
+}
+
+.lm-no-services {
+	color: #646970;
+	font-style: italic;
+}
+
+/* ── Step 2: Calendar ─────────────────────────────────────────── */
+
+.lm-calendar-wrap {
+	margin-bottom: 20px;
+}
+
+.lm-calendar-nav {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8px;
+	padding: 0 4px;
+}
+
+.lm-cal-month-label {
+	font-weight: 600;
+	font-size: 16px;
+}
+
+.lm-cal-prev,
+.lm-cal-next {
+	background: none;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	padding: 4px 12px;
+	font-size: 14px;
+	cursor: pointer;
+	color: #1e1e1e;
+	transition: background-color 0.15s, border-color 0.15s;
+}
+
+.lm-cal-prev:hover,
+.lm-cal-next:hover {
+	background-color: #f0f0f1;
+	border-color: #999;
+}
+
+.lm-cal-prev:disabled,
+.lm-cal-next:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.lm-calendar {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+
+.lm-calendar th {
+	padding: 8px 4px;
+	text-align: center;
+	font-size: 12px;
+	font-weight: 600;
+	color: #646970;
+	text-transform: uppercase;
+}
+
+.lm-calendar td {
+	padding: 2px;
+	text-align: center;
+	vertical-align: middle;
+}
+
+.lm-cal-day {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border-radius: 50%;
+	font-size: 14px;
+	cursor: pointer;
+	transition: background-color 0.15s, color 0.15s;
+	border: none;
+	background: none;
+	color: #1e1e1e;
+}
+
+.lm-cal-day:hover {
+	background-color: #f0f6fc;
+	color: #0073aa;
+}
+
+.lm-cal-day--disabled {
+	color: #c3c4c7;
+	cursor: not-allowed;
+}
+
+.lm-cal-day--disabled:hover {
+	background: none;
+	color: #c3c4c7;
+}
+
+.lm-cal-day--today {
+	font-weight: 700;
+	text-decoration: underline;
+}
+
+.lm-cal-day--selected {
+	background-color: #0073aa;
+	color: #fff;
+}
+
+.lm-cal-day--selected:hover {
+	background-color: #005a87;
+	color: #fff;
+}
+
+/* ── Step 2: Time slots ───────────────────────────────────────── */
+
+.lm-slots-wrap {
+	min-height: 60px;
+}
+
+.lm-slots-prompt {
+	color: #646970;
+	font-style: italic;
+	margin: 0;
+}
+
+.lm-slots-loading {
+	color: #646970;
+	padding: 12px 0;
+}
+
+.lm-slots-empty {
+	color: #646970;
+	font-style: italic;
+	margin: 0;
+}
+
+.lm-slots-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.lm-slot-btn {
+	padding: 8px 16px;
+	border: 2px solid #ddd;
+	border-radius: 6px;
+	background: #fff;
+	font-size: 14px;
+	cursor: pointer;
+	transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+	color: #1e1e1e;
+}
+
+.lm-slot-btn:hover {
+	border-color: #0073aa;
+	background-color: #f0f6fc;
+	color: #0073aa;
+}
+
+.lm-slot-btn--selected {
+	border-color: #0073aa;
+	background-color: #0073aa;
+	color: #fff;
+}
+
+.lm-slot-btn--selected:hover {
+	background-color: #005a87;
+	border-color: #005a87;
+	color: #fff;
+}
+
+/* ── Step 3: Booking form ─────────────────────────────────────── */
+
+.lm-selected-summary {
+	background: #f0f6fc;
+	border: 1px solid #c3d8e6;
+	border-radius: 6px;
+	padding: 12px 16px;
+	margin-bottom: 20px;
+	font-size: 14px;
+	line-height: 1.6;
+}
+
+/* Honeypot — completely hidden */
+.lm-hp {
+	position: absolute !important;
+	left: -9999px !important;
+	width: 1px !important;
+	height: 1px !important;
+	overflow: hidden !important;
+}
+
+.lm-field {
+	margin-bottom: 16px;
+}
+
+.lm-field label {
+	display: block;
+	margin-bottom: 4px;
+	font-weight: 600;
+	font-size: 14px;
+}
+
+.lm-required {
+	color: #d63638;
+}
+
+.lm-field input[type="text"],
+.lm-field input[type="email"],
+.lm-field input[type="tel"],
+.lm-field textarea {
+	width: 100%;
+	padding: 8px 12px;
+	border: 1px solid #8c8f94;
+	border-radius: 4px;
+	font-size: 15px;
+	font-family: inherit;
+	transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.lm-field input:focus,
+.lm-field textarea:focus {
+	border-color: #0073aa;
+	box-shadow: 0 0 0 1px #0073aa;
+	outline: none;
+}
+
+.lm-form-actions {
+	display: flex;
+	gap: 12px;
+	margin-top: 20px;
+}
+
+.lm-btn {
+	padding: 10px 24px;
+	border: none;
+	border-radius: 4px;
+	font-size: 15px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background-color 0.15s, opacity 0.15s;
+}
+
+.lm-btn--back {
+	background: #f0f0f1;
+	color: #1e1e1e;
+}
+
+.lm-btn--back:hover {
+	background: #dcdcde;
+}
+
+.lm-btn--submit {
+	background: #0073aa;
+	color: #fff;
+}
+
+.lm-btn--submit:hover {
+	background: #005a87;
+}
+
+.lm-btn--submit:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.lm-form-error {
+	margin-top: 12px;
+	padding: 10px 14px;
+	background: #fcf0f1;
+	border: 1px solid #d63638;
+	border-radius: 4px;
+	color: #d63638;
+	font-size: 14px;
+}
+
+/* ── Step 4: Success ──────────────────────────────────────────── */
+
+.lm-success-message {
+	text-align: center;
+	padding: 24px;
+}
+
+.lm-success-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 56px;
+	height: 56px;
+	border-radius: 50%;
+	background: #d4edda;
+	color: #155724;
+	font-size: 28px;
+	margin-bottom: 12px;
+}
+
+.lm-success-details {
+	background: #f0f6fc;
+	border-radius: 6px;
+	padding: 16px;
+	margin: 16px 0;
+	text-align: left;
+	font-size: 14px;
+	line-height: 1.8;
+}
+
+.lm-success-email {
+	color: #646970;
+	font-size: 13px;
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+	.lm-booking-widget {
+		font-size: 14px;
+	}
+
+	.lm-cal-day {
+		width: 32px;
+		height: 32px;
+		font-size: 13px;
+	}
+
+	.lm-slot-btn {
+		padding: 6px 12px;
+		font-size: 13px;
+	}
+}

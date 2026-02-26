@@ -38,5 +38,13 @@ class Lets_Meet_Loader {
 		add_action( 'admin_post_lm_save_gcal_settings', [ $admin, 'handle_save_gcal_settings' ] );
 		add_action( 'admin_post_lm_gcal_disconnect', [ $admin, 'handle_gcal_disconnect' ] );
 		add_action( 'admin_notices', [ $gcal, 'maybe_show_admin_notice' ] );
+
+		// Frontend: shortcode, assets, AJAX.
+		$public = new Lets_Meet_Public( $services, $availability );
+
+		add_action( 'init', [ $public, 'register_shortcode' ] );
+		add_action( 'wp_enqueue_scripts', [ $public, 'enqueue_public_assets' ] );
+		add_action( 'wp_ajax_lm_get_slots', [ $public, 'ajax_get_slots' ] );
+		add_action( 'wp_ajax_nopriv_lm_get_slots', [ $public, 'ajax_get_slots' ] );
 	}
 }
