@@ -6,6 +6,7 @@
 
 	document.addEventListener( 'DOMContentLoaded', function () {
 		initCopyRight();
+		initCancelConfirm();
 	} );
 
 	/**
@@ -45,6 +46,21 @@
 					}
 				}
 			} );
+		} );
+	}
+
+	/**
+	 * Cancel booking confirmation dialog.
+	 */
+	function initCancelConfirm() {
+		document.addEventListener( 'click', function ( e ) {
+			var link = e.target.closest( '.lm-cancel-link' );
+			if ( ! link ) {
+				return;
+			}
+			if ( ! confirm( 'Are you sure you want to cancel this booking?' ) ) {
+				e.preventDefault();
+			}
 		} );
 	}
 

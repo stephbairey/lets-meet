@@ -23,9 +23,10 @@ class Lets_Meet_Loader {
 		$services     = new Lets_Meet_Services();
 		$gcal         = new Lets_Meet_Gcal();
 		$availability = new Lets_Meet_Availability( $services, $gcal );
+		$bookings     = new Lets_Meet_Bookings( $services, $availability, $gcal );
 
 		// Admin: menu, assets, form handlers.
-		$admin = new Lets_Meet_Admin( $services, $gcal );
+		$admin = new Lets_Meet_Admin( $services, $gcal, $bookings );
 
 		add_action( 'admin_init', [ $admin, 'handle_early_actions' ] );
 		add_action( 'admin_menu', [ $admin, 'register_menu' ] );
@@ -38,9 +39,6 @@ class Lets_Meet_Loader {
 		add_action( 'admin_post_lm_save_gcal_settings', [ $admin, 'handle_save_gcal_settings' ] );
 		add_action( 'admin_post_lm_gcal_disconnect', [ $admin, 'handle_gcal_disconnect' ] );
 		add_action( 'admin_notices', [ $gcal, 'maybe_show_admin_notice' ] );
-
-		// Bookings: creation, cancellation, concurrency.
-		$bookings = new Lets_Meet_Bookings( $services, $availability, $gcal );
 
 		// Frontend: shortcode, assets, AJAX.
 		$public = new Lets_Meet_Public( $services, $availability, $bookings );

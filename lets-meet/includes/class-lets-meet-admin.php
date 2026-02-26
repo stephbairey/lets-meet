@@ -14,9 +14,13 @@ class Lets_Meet_Admin {
 	/** @var Lets_Meet_Gcal */
 	private $gcal;
 
-	public function __construct( Lets_Meet_Services $services, Lets_Meet_Gcal $gcal ) {
+	/** @var Lets_Meet_Bookings */
+	private $bookings;
+
+	public function __construct( Lets_Meet_Services $services, Lets_Meet_Gcal $gcal, Lets_Meet_Bookings $bookings ) {
 		$this->services = $services;
 		$this->gcal     = $gcal;
+		$this->bookings = $bookings;
 	}
 
 	/**
@@ -91,24 +95,266 @@ class Lets_Meet_Admin {
 	 * Hooked to admin_init so wp_safe_redirect() works properly.
 	 */
 	public function handle_early_actions() {
-		if ( ! isset( $_GET['page'] ) || 'lets-meet-services' !== $_GET['page'] ) {
-			return;
-		}
-		if ( ! isset( $_GET['action'] ) || 'toggle' !== $_GET['action'] ) {
+		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
 
-		$this->handle_toggle_service();
+		$page   = sanitize_text_field( $_GET['page'] ?? '' );
+		$action = sanitize_text_field( $_GET['action'] ?? '' );
+
+		// Service toggle.
+		if ( 'lets-meet-services' === $page && 'toggle' === $action ) {
+			$this->handle_toggle_service();
+			return;
+		}
+
+		// Single booking cancel.
+		if ( 'lets-meet' === $page && 'cancel' === $action ) {
+			$this->handle_cancel_booking();
+			return;
+		}
+
+		// Bulk cancel (POST from list table).
+		if ( 'lets-meet' === $page && isset( $_POST['action'] ) ) {
+			$post_action  = sanitize_text_field( $_POST['action'] );
+			$post_action2 = sanitize_text_field( $_POST['action2'] ?? '' );
+			if ( 'bulk_cancel' === $post_action || 'bulk_cancel' === $post_action2 ) {
+				$this->handle_bulk_cancel();
+			}
+		}
 	}
 
-	/* ── Bookings page (placeholder for Phase 9) ──────────────────── */
+	/* ── Bookings page ────────────────────────────────────────────── */
 
+	/**
+	 * Render the bookings page — list or detail view.
+	 */
 	public function render_bookings_page() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
-		echo '<div class="wrap"><h1>' . esc_html__( 'Bookings', 'lets-meet' ) . '</h1>';
-		echo '<p>' . esc_html__( 'Bookings dashboard coming soon.', 'lets-meet' ) . '</p></div>';
+
+		$action = sanitize_text_field( $_GET['action'] ?? '' );
+
+		if ( 'view' === $action && ! empty( $_GET['booking_id'] ) ) {
+			$this->render_booking_detail( absint( $_GET['booking_id'] ) );
+			return;
+		}
+
+		$this->render_bookings_list();
+	}
+
+	/**
+	 * Render the bookings list table.
+	 */
+	private function render_bookings_list() {
+		$table = new Lets_Meet_Bookings_Table();
+		$table->prepare_items();
+
+		echo '<div class="wrap">';
+		echo '<h1 class="wp-heading-inline">' . esc_html__( 'Bookings', 'lets-meet' ) . '</h1>';
+
+		// Admin notices for cancel actions.
+		if ( isset( $_GET['cancelled'] ) ) {
+			$count = absint( $_GET['cancelled'] );
+			echo '<div class="notice notice-success is-dismissible"><p>';
+			printf(
+				/* translators: %d: number of bookings cancelled */
+				esc_html( _n( '%d booking cancelled.', '%d bookings cancelled.', $count, 'lets-meet' ) ),
+				$count
+			);
+			echo '</p></div>';
+		}
+
+		echo '<form method="post">';
+		$table->views();
+		$table->display();
+		echo '</form>';
+		echo '</div>';
+	}
+
+	/**
+	 * Render the single booking detail view.
+	 *
+	 * @param int $booking_id Booking ID.
+	 */
+	private function render_booking_detail( $booking_id ) {
+		$booking = $this->bookings->get( $booking_id );
+
+		if ( ! $booking ) {
+			echo '<div class="wrap">';
+			echo '<h1>' . esc_html__( 'Booking Not Found', 'lets-meet' ) . '</h1>';
+			echo '<p>' . esc_html__( 'The requested booking does not exist.', 'lets-meet' ) . '</p>';
+			echo '<a href="' . esc_url( admin_url( 'admin.php?page=lets-meet' ) ) . '">&larr; '
+				. esc_html__( 'Back to Bookings', 'lets-meet' ) . '</a>';
+			echo '</div>';
+			return;
+		}
+
+		// Convert start_utc to site timezone for display.
+		try {
+			$tz = new DateTimeZone( $booking->site_timezone ?: wp_timezone_string() );
+		} catch ( Exception $e ) {
+			$tz = wp_timezone();
+		}
+		$start = new DateTimeImmutable( $booking->start_utc, new DateTimeZone( 'UTC' ) );
+		$local = $start->setTimezone( $tz );
+
+		// Get service name.
+		$service = $this->services->get( $booking->service_id );
+		$service_name = $service ? $service->name : __( '(deleted)', 'lets-meet' );
+
+		echo '<div class="wrap">';
+		echo '<h1>' . esc_html__( 'Booking Details', 'lets-meet' ) . '</h1>';
+
+		echo '<a href="' . esc_url( admin_url( 'admin.php?page=lets-meet' ) ) . '">&larr; '
+			. esc_html__( 'Back to Bookings', 'lets-meet' ) . '</a>';
+
+		echo '<table class="form-table lm-booking-detail" role="presentation">';
+
+		// Status.
+		$status_label = 'confirmed' === $booking->status
+			? __( 'Confirmed', 'lets-meet' )
+			: __( 'Cancelled', 'lets-meet' );
+		$status_class = 'confirmed' === $booking->status ? 'lm-status-confirmed' : 'lm-status-cancelled';
+
+		echo '<tr><th>' . esc_html__( 'Status', 'lets-meet' ) . '</th><td>'
+			. '<span class="lm-status ' . esc_attr( $status_class ) . '">' . esc_html( $status_label ) . '</span>'
+			. '</td></tr>';
+
+		// Service.
+		echo '<tr><th>' . esc_html__( 'Service', 'lets-meet' ) . '</th><td>'
+			. esc_html( $service_name ) . '</td></tr>';
+
+		// Date.
+		echo '<tr><th>' . esc_html__( 'Date', 'lets-meet' ) . '</th><td>'
+			. esc_html( wp_date( 'l, F j, Y', $local->getTimestamp() ) ) . '</td></tr>';
+
+		// Time.
+		echo '<tr><th>' . esc_html__( 'Time', 'lets-meet' ) . '</th><td>'
+			. esc_html( wp_date( 'g:i A', $local->getTimestamp() ) ) . '</td></tr>';
+
+		// Duration.
+		echo '<tr><th>' . esc_html__( 'Duration', 'lets-meet' ) . '</th><td>'
+			. sprintf(
+				/* translators: %d: number of minutes */
+				esc_html__( '%d minutes', 'lets-meet' ),
+				absint( $booking->duration )
+			)
+			. '</td></tr>';
+
+		// Client name.
+		echo '<tr><th>' . esc_html__( 'Client Name', 'lets-meet' ) . '</th><td>'
+			. esc_html( $booking->client_name ) . '</td></tr>';
+
+		// Client email.
+		echo '<tr><th>' . esc_html__( 'Client Email', 'lets-meet' ) . '</th><td>'
+			. '<a href="mailto:' . esc_attr( $booking->client_email ) . '">'
+			. esc_html( $booking->client_email ) . '</a></td></tr>';
+
+		// Client phone.
+		if ( ! empty( $booking->client_phone ) ) {
+			echo '<tr><th>' . esc_html__( 'Client Phone', 'lets-meet' ) . '</th><td>'
+				. esc_html( $booking->client_phone ) . '</td></tr>';
+		}
+
+		// Client notes.
+		if ( ! empty( $booking->client_notes ) ) {
+			echo '<tr><th>' . esc_html__( 'Notes', 'lets-meet' ) . '</th><td>'
+				. esc_html( $booking->client_notes ) . '</td></tr>';
+		}
+
+		// GCal event.
+		if ( ! empty( $booking->gcal_event_id ) ) {
+			$gcal_label = 'cancelled' === $booking->status
+				? __( 'Event deleted', 'lets-meet' )
+				: __( 'Synced', 'lets-meet' );
+			echo '<tr><th>' . esc_html__( 'Google Calendar', 'lets-meet' ) . '</th><td>'
+				. esc_html( $gcal_label ) . '</td></tr>';
+		}
+
+		// Booked at.
+		echo '<tr><th>' . esc_html__( 'Booked At', 'lets-meet' ) . '</th><td>'
+			. esc_html( wp_date( 'M j, Y — g:i A', strtotime( $booking->created_at ) ) )
+			. '</td></tr>';
+
+		echo '</table>';
+
+		// Cancel button.
+		if ( 'cancelled' !== $booking->status ) {
+			$cancel_url = wp_nonce_url(
+				add_query_arg( [
+					'page'       => 'lets-meet',
+					'action'     => 'cancel',
+					'booking_id' => absint( $booking->id ),
+				], admin_url( 'admin.php' ) ),
+				'lm_cancel_booking_' . $booking->id
+			);
+
+			echo '<p class="submit">';
+			echo '<a href="' . esc_url( $cancel_url ) . '" class="button button-secondary lm-cancel-link" style="color: #b32d2e;">'
+				. esc_html__( 'Cancel Booking', 'lets-meet' ) . '</a>';
+			echo '</p>';
+		}
+
+		echo '</div>';
+	}
+
+	/* ── Booking action handlers ─────────────────────────────────── */
+
+	/**
+	 * Handle single booking cancellation.
+	 */
+	private function handle_cancel_booking() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized.', 'lets-meet' ) );
+		}
+
+		$booking_id = absint( $_GET['booking_id'] ?? 0 );
+
+		if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', 'lm_cancel_booking_' . $booking_id ) ) {
+			wp_die( esc_html__( 'Invalid nonce. Please try again.', 'lets-meet' ) );
+		}
+
+		$cancelled = 0;
+		if ( $this->bookings->cancel( $booking_id ) ) {
+			$cancelled = 1;
+		}
+
+		wp_safe_redirect( add_query_arg( [
+			'page'      => 'lets-meet',
+			'cancelled' => $cancelled,
+		], admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Handle bulk booking cancellation.
+	 */
+	private function handle_bulk_cancel() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized.', 'lets-meet' ) );
+		}
+
+		// WP_List_Table uses _wpnonce with action 'bulk-bookings'.
+		if ( ! wp_verify_nonce( $_POST['_wpnonce'] ?? '', 'bulk-bookings' ) ) {
+			wp_die( esc_html__( 'Invalid nonce. Please try again.', 'lets-meet' ) );
+		}
+
+		$ids = array_map( 'absint', (array) ( $_POST['booking_ids'] ?? [] ) );
+		$cancelled = 0;
+
+		foreach ( $ids as $id ) {
+			if ( $id > 0 && $this->bookings->cancel( $id ) ) {
+				$cancelled++;
+			}
+		}
+
+		wp_safe_redirect( add_query_arg( [
+			'page'      => 'lets-meet',
+			'cancelled' => $cancelled,
+		], admin_url( 'admin.php' ) ) );
+		exit;
 	}
 
 	/* ── Settings page ─────────────────────────────────────────────── */

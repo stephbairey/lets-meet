@@ -39,6 +39,7 @@ require_once LM_PATH . 'includes/class-lets-meet-services.php';
 require_once LM_PATH . 'includes/class-lets-meet-gcal.php';
 require_once LM_PATH . 'includes/class-lets-meet-availability.php';
 require_once LM_PATH . 'includes/class-lets-meet-bookings.php';
+require_once LM_PATH . 'includes/class-lets-meet-bookings-table.php';
 require_once LM_PATH . 'includes/class-lets-meet-email.php';
 require_once LM_PATH . 'includes/class-lets-meet-admin.php';
 require_once LM_PATH . 'includes/class-lets-meet-public.php';

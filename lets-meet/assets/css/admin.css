@@ -118,3 +118,22 @@
 	background: #f8d7da;
 	color: #721c24;
 }
+
+/* ── Bookings: status badges ──────────────────────────────────── */
+
+.lm-status-confirmed {
+	background: #d4edda;
+	color: #155724;
+}
+
+.lm-status-cancelled {
+	background: #f0f0f1;
+	color: #50575e;
+}
+
+/* ── Bookings: detail view ────────────────────────────────────── */
+
+.lm-booking-detail th {
+	width: 150px;
+	font-weight: 600;
+}
