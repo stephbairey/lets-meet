@@ -26,3 +26,73 @@
 	background: #f0f0f1;
 	color: #50575e;
 }
+
+/* ── Settings: tabs content ────────────────────────────────────── */
+
+.lm-settings-content {
+	margin-top: 20px;
+}
+
+/* ── Availability grid ─────────────────────────────────────────── */
+
+.lm-availability-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 12px;
+	margin: 16px 0 24px;
+	max-width: 1200px;
+}
+
+.lm-day {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 12px;
+}
+
+.lm-day h3 {
+	margin: 0 0 10px;
+	font-size: 13px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.lm-slot-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-bottom: 6px;
+}
+
+.lm-slot-row select {
+	width: 100%;
+	min-width: 0;
+	font-size: 12px;
+	padding: 2px 4px;
+}
+
+.lm-to {
+	flex-shrink: 0;
+	font-size: 11px;
+	color: #646970;
+}
+
+.lm-copy-right {
+	font-size: 11px !important;
+	padding: 0 6px !important;
+	min-height: 22px !important;
+}
+
+/* Stack on narrow screens */
+@media (max-width: 1200px) {
+	.lm-availability-grid {
+		grid-template-columns: repeat(4, 1fr);
+	}
+}
+
+@media (max-width: 782px) {
+	.lm-availability-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}

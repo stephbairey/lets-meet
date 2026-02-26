@@ -27,5 +27,6 @@ class Lets_Meet_Loader {
 		add_action( 'admin_menu', [ $admin, 'register_menu' ] );
 		add_action( 'admin_enqueue_scripts', [ $admin, 'enqueue_admin_assets' ] );
 		add_action( 'admin_post_lm_save_service', [ $admin, 'handle_save_service' ] );
+		add_action( 'admin_post_lm_save_settings', [ $admin, 'handle_save_settings' ] );
 	}
 }
