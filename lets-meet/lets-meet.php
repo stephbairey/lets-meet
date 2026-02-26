@@ -36,6 +36,7 @@ function lm_log( $message, $data = [] ) {
 
 require_once LM_PATH . 'includes/class-lets-meet-db.php';
 require_once LM_PATH . 'includes/class-lets-meet-services.php';
+require_once LM_PATH . 'includes/class-lets-meet-gcal.php';
 require_once LM_PATH . 'includes/class-lets-meet-availability.php';
 require_once LM_PATH . 'includes/class-lets-meet-admin.php';
 require_once LM_PATH . 'includes/class-lets-meet-loader.php';
@@ -48,7 +49,7 @@ register_activation_hook( __FILE__, function () {
 
 	// Schedule nightly prewarm cron (if not already scheduled).
 	if ( ! wp_next_scheduled( 'lm_prewarm_gcal' ) ) {
-		wp_schedule_event( time(), 'daily', 'lm_prewarm_gcal' );
+		wp_schedule_event( current_datetime()->getTimestamp(), 'daily', 'lm_prewarm_gcal' );
 	}
 
 	// Seed default settings if they don't exist yet.

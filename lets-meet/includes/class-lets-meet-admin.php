@@ -11,8 +11,12 @@ class Lets_Meet_Admin {
 	/** @var Lets_Meet_Services */
 	private $services;
 
-	public function __construct( Lets_Meet_Services $services ) {
+	/** @var Lets_Meet_Gcal */
+	private $gcal;
+
+	public function __construct( Lets_Meet_Services $services, Lets_Meet_Gcal $gcal ) {
 		$this->services = $services;
+		$this->gcal     = $gcal;
 	}
 
 	/**
@@ -176,6 +180,60 @@ class Lets_Meet_Admin {
 			</div>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Handle saving Google Calendar credentials.
+	 */
+	public function handle_save_gcal_settings() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized', 'lets-meet' ) );
+		}
+
+		check_admin_referer( 'lm_save_gcal_settings', 'lm_nonce' );
+
+		$client_id     = sanitize_text_field( $_POST['lm_gcal_client_id'] ?? '' );
+		$client_secret = sanitize_text_field( $_POST['lm_gcal_client_secret'] ?? '' );
+		$calendar_id   = sanitize_text_field( $_POST['lm_gcal_calendar_id'] ?? 'primary' );
+
+		// If secret is empty and we already have one saved, keep it.
+		if ( '' === $client_secret && $this->gcal->is_connected() ) {
+			// Only update client_id and calendar_id.
+			if ( false === get_option( 'lm_gcal_client_id' ) ) {
+				add_option( 'lm_gcal_client_id', $client_id, '', 'no' );
+			} else {
+				update_option( 'lm_gcal_client_id', $client_id, 'no' );
+			}
+			if ( '' === $calendar_id ) {
+				$calendar_id = 'primary';
+			}
+			if ( false === get_option( 'lm_gcal_calendar_id' ) ) {
+				add_option( 'lm_gcal_calendar_id', $calendar_id, '', 'no' );
+			} else {
+				update_option( 'lm_gcal_calendar_id', $calendar_id, 'no' );
+			}
+		} else {
+			$this->gcal->save_credentials( $client_id, $client_secret, $calendar_id );
+		}
+
+		wp_safe_redirect( admin_url( 'admin.php?page=lets-meet-settings&tab=gcal&updated=1' ) );
+		exit;
+	}
+
+	/**
+	 * Handle disconnecting Google Calendar.
+	 */
+	public function handle_gcal_disconnect() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized', 'lets-meet' ) );
+		}
+
+		check_admin_referer( 'lm_gcal_disconnect' );
+
+		$this->gcal->disconnect();
+
+		wp_safe_redirect( admin_url( 'admin.php?page=lets-meet-settings&tab=gcal&gcal_disconnected=1' ) );
+		exit;
 	}
 
 	/**
@@ -378,10 +436,111 @@ class Lets_Meet_Admin {
 	 * Render the Google Calendar tab (placeholder for Phase 5).
 	 */
 	private function render_tab_gcal() {
+		$is_connected = $this->gcal->is_connected();
+		$client_id    = get_option( 'lm_gcal_client_id', '' );
+		$calendar_id  = get_option( 'lm_gcal_calendar_id', 'primary' );
+
+		// Notices.
+		if ( isset( $_GET['gcal_connected'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Google Calendar connected successfully.', 'lets-meet' ) . '</p></div>';
+		}
+		if ( isset( $_GET['gcal_disconnected'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Google Calendar disconnected.', 'lets-meet' ) . '</p></div>';
+		}
+		if ( isset( $_GET['gcal_error'] ) ) {
+			$err = sanitize_text_field( $_GET['gcal_error'] );
+			if ( 'auth_denied' === $err ) {
+				echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__( 'Google Calendar authorization was denied. Please try again.', 'lets-meet' ) . '</p></div>';
+			} elseif ( 'token_exchange' === $err ) {
+				echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__( 'Failed to exchange authorization code. Please check your credentials and try again.', 'lets-meet' ) . '</p></div>';
+			}
+		}
 		?>
 		<h2><?php esc_html_e( 'Google Calendar', 'lets-meet' ); ?></h2>
-		<p><?php esc_html_e( 'Google Calendar integration will be configured here.', 'lets-meet' ); ?></p>
-		<?php
+
+		<?php if ( $is_connected ) : ?>
+			<div class="lm-gcal-status lm-gcal-status--connected">
+				<span class="dashicons dashicons-yes-alt"></span>
+				<?php esc_html_e( 'Connected', 'lets-meet' ); ?>
+			</div>
+		<?php else : ?>
+			<div class="lm-gcal-status lm-gcal-status--disconnected">
+				<span class="dashicons dashicons-warning"></span>
+				<?php esc_html_e( 'Not connected', 'lets-meet' ); ?>
+			</div>
+		<?php endif; ?>
+
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="lm_save_gcal_settings">
+			<?php wp_nonce_field( 'lm_save_gcal_settings', 'lm_nonce' ); ?>
+
+			<table class="form-table">
+				<tr>
+					<th scope="row">
+						<label for="lm-gcal-client-id"><?php esc_html_e( 'Client ID', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="text" id="lm-gcal-client-id" name="lm_gcal_client_id"
+							value="<?php echo esc_attr( $client_id ); ?>"
+							class="large-text">
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<label for="lm-gcal-client-secret"><?php esc_html_e( 'Client Secret', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="password" id="lm-gcal-client-secret" name="lm_gcal_client_secret"
+							value="" class="regular-text" autocomplete="new-password">
+						<p class="description">
+							<?php
+							if ( $is_connected ) {
+								esc_html_e( 'Leave blank to keep the current secret.', 'lets-meet' );
+							} else {
+								esc_html_e( 'Enter your Google OAuth Client Secret.', 'lets-meet' );
+							}
+							?>
+						</p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<label for="lm-gcal-calendar-id"><?php esc_html_e( 'Calendar ID', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="text" id="lm-gcal-calendar-id" name="lm_gcal_calendar_id"
+							value="<?php echo esc_attr( $calendar_id ); ?>"
+							class="regular-text">
+						<p class="description">
+							<?php esc_html_e( 'Default: primary. Use your calendar\'s email address for a specific calendar.', 'lets-meet' ); ?>
+						</p>
+					</td>
+				</tr>
+			</table>
+
+			<?php submit_button( __( 'Save Credentials', 'lets-meet' ) ); ?>
+		</form>
+
+		<hr>
+
+		<?php if ( $is_connected ) : ?>
+			<h3><?php esc_html_e( 'Connection', 'lets-meet' ); ?></h3>
+			<p><?php esc_html_e( 'Your Google Calendar is connected. Availability will include your Google Calendar events.', 'lets-meet' ); ?></p>
+			<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=lm_gcal_disconnect' ), 'lm_gcal_disconnect' ) ); ?>"
+				class="button" onclick="return confirm('<?php echo esc_js( __( 'Disconnect Google Calendar?', 'lets-meet' ) ); ?>');">
+				<?php esc_html_e( 'Disconnect', 'lets-meet' ); ?>
+			</a>
+		<?php elseif ( '' !== $client_id ) : ?>
+			<h3><?php esc_html_e( 'Connection', 'lets-meet' ); ?></h3>
+			<p><?php esc_html_e( 'Credentials saved. Click below to authorize access to your Google Calendar.', 'lets-meet' ); ?></p>
+			<a href="<?php echo esc_url( $this->gcal->get_auth_url() ); ?>" class="button button-primary">
+				<?php esc_html_e( 'Connect Google Calendar', 'lets-meet' ); ?>
+			</a>
+		<?php else : ?>
+			<p class="description">
+				<?php esc_html_e( 'Enter your Google OAuth credentials above and save, then you can connect.', 'lets-meet' ); ?>
+			</p>
+		<?php endif;
 	}
 
 	/**

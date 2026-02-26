@@ -22,8 +22,12 @@ class Lets_Meet_Availability {
 	/** @var Lets_Meet_Services */
 	private $services;
 
-	public function __construct( Lets_Meet_Services $services ) {
+	/** @var Lets_Meet_Gcal */
+	private $gcal;
+
+	public function __construct( Lets_Meet_Services $services, Lets_Meet_Gcal $gcal ) {
 		$this->services = $services;
+		$this->gcal     = $gcal;
 	}
 
 	/**
@@ -89,8 +93,8 @@ class Lets_Meet_Availability {
 		// 5a. DB bookings.
 		$busy = $this->get_busy_from_db( $day_start_utc, $day_end_utc, $tz );
 
-		// 5b. Google Calendar (Phase 5 — stub returns empty array).
-		$busy = array_merge( $busy, $this->get_busy_from_gcal( $date ) );
+		// 5b. Google Calendar busy times.
+		$busy = array_merge( $busy, $this->gcal->get_busy( $date, $tz ) );
 
 		// ── Step 6: Apply buffer to all busy intervals ───────────────
 		$buffer = absint( $settings['buffer'] ?? 30 );
@@ -170,19 +174,6 @@ class Lets_Meet_Availability {
 		}
 
 		return $busy;
-	}
-
-	/**
-	 * Get busy intervals from Google Calendar.
-	 *
-	 * Stub for Phase 5 — returns empty array when GCal is not connected.
-	 *
-	 * @param string $date 'Y-m-d' date string.
-	 * @return array
-	 */
-	private function get_busy_from_gcal( $date ) {
-		// Phase 5 will implement FreeBusy API integration here.
-		return [];
 	}
 
 	/**

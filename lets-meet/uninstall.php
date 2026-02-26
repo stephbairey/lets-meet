@@ -34,6 +34,16 @@ if ( empty( $settings['keep_data'] ) ) {
 		delete_option( $key );
 	}
 
+	// Delete plugin transients.
+	delete_transient( 'lm_gcal_error' );
+
+	// Delete per-date FreeBusy cache transients.
+	$wpdb->query(
+		"DELETE FROM {$wpdb->options}
+		 WHERE option_name LIKE '_transient_lm_gcal_busy_%'
+		    OR option_name LIKE '_transient_timeout_lm_gcal_busy_%'"
+	);
+
 	// Unschedule cron events.
 	$timestamp = wp_next_scheduled( 'lm_prewarm_gcal' );
 	if ( $timestamp ) {
