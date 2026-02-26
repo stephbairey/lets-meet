@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Renders the booking widget via [lets_meet] shortcode,
  * enqueues public CSS/JS only on pages that use the shortcode,
- * and handles AJAX requests for slot fetching.
+ * and handles AJAX requests for slot fetching and booking submission.
  */
 class Lets_Meet_Public {
 
@@ -18,9 +18,13 @@ class Lets_Meet_Public {
 	/** @var Lets_Meet_Availability */
 	private $availability;
 
-	public function __construct( Lets_Meet_Services $services, Lets_Meet_Availability $availability ) {
+	/** @var Lets_Meet_Bookings */
+	private $bookings;
+
+	public function __construct( Lets_Meet_Services $services, Lets_Meet_Availability $availability, Lets_Meet_Bookings $bookings ) {
 		$this->services     = $services;
 		$this->availability = $availability;
+		$this->bookings     = $bookings;
 	}
 
 	/* ── Shortcode ────────────────────────────────────────────────── */
@@ -181,6 +185,63 @@ class Lets_Meet_Public {
 			'slots'    => $formatted,
 			'date'     => $date,
 			'duration' => absint( $service->duration ),
+		] );
+	}
+
+	/* ── AJAX: submit booking ─────────────────────────────────────── */
+
+	/**
+	 * AJAX handler: submit a booking.
+	 */
+	public function ajax_submit_booking() {
+		check_ajax_referer( 'lm_frontend_nonce', 'nonce' );
+
+		// Honeypot check — reject if filled.
+		$honeypot = sanitize_text_field( $_POST['honeypot'] ?? '' );
+		if ( '' !== $honeypot ) {
+			wp_send_json_error( [ 'message' => __( 'Something went wrong. Please try again.', 'lets-meet' ) ] );
+			return;
+		}
+
+		// Rendered-at timestamp check — reject if submitted < 3 seconds after render.
+		$rendered_at = absint( $_POST['rendered_at'] ?? 0 );
+		$now         = current_datetime()->getTimestamp();
+		if ( 0 === $rendered_at || ( $now - $rendered_at ) < 3 ) {
+			wp_send_json_error( [ 'message' => __( 'Something went wrong. Please try again.', 'lets-meet' ) ] );
+			return;
+		}
+
+		// Rate limiting.
+		if ( ! $this->bookings->check_rate_limit() ) {
+			wp_send_json_error( [ 'message' => __( 'Too many booking attempts. Please try again later.', 'lets-meet' ) ] );
+			return;
+		}
+
+		// Attempt to create the booking.
+		$result = $this->bookings->create( [
+			'service_id' => absint( $_POST['service_id'] ?? 0 ),
+			'date'       => sanitize_text_field( $_POST['date'] ?? '' ),
+			'time'       => sanitize_text_field( $_POST['time'] ?? '' ),
+			'name'       => sanitize_text_field( $_POST['name'] ?? '' ),
+			'email'      => sanitize_email( $_POST['email'] ?? '' ),
+			'phone'      => sanitize_text_field( $_POST['phone'] ?? '' ),
+			'notes'      => sanitize_textarea_field( $_POST['notes'] ?? '' ),
+		] );
+
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+			return;
+		}
+
+		wp_send_json_success( [
+			'service'  => $result['service_name'],
+			'date'     => $result['date_display'],
+			'time'     => $result['time_display'],
+			'duration' => sprintf(
+				/* translators: %d: duration in minutes */
+				__( '%d minutes', 'lets-meet' ),
+				$result['duration']
+			),
 		] );
 	}
 }
