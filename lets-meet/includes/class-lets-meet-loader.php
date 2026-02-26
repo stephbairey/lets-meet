@@ -51,5 +51,9 @@ class Lets_Meet_Loader {
 		add_action( 'wp_ajax_nopriv_lm_get_slots', [ $public, 'ajax_get_slots' ] );
 		add_action( 'wp_ajax_lm_submit_booking', [ $public, 'ajax_submit_booking' ] );
 		add_action( 'wp_ajax_nopriv_lm_submit_booking', [ $public, 'ajax_submit_booking' ] );
+
+		// Email confirmations.
+		$email = new Lets_Meet_Email();
+		add_action( 'lm_booking_created', [ $email, 'send_confirmation' ], 10, 2 );
 	}
 }
