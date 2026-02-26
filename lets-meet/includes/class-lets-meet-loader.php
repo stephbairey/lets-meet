@@ -19,9 +19,12 @@ class Lets_Meet_Loader {
 		$db = new Lets_Meet_Db();
 		add_action( 'admin_init', [ $db, 'maybe_upgrade' ] );
 
+		// Core classes.
+		$services     = new Lets_Meet_Services();
+		$availability = new Lets_Meet_Availability( $services );
+
 		// Admin: menu, assets, form handlers.
-		$services = new Lets_Meet_Services();
-		$admin    = new Lets_Meet_Admin( $services );
+		$admin = new Lets_Meet_Admin( $services );
 
 		add_action( 'admin_init', [ $admin, 'handle_early_actions' ] );
 		add_action( 'admin_menu', [ $admin, 'register_menu' ] );
