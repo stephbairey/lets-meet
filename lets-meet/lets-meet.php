@@ -35,6 +35,8 @@ function lm_log( $message, $data = [] ) {
 /* ── Includes ─────────────────────────────────────────────────────── */
 
 require_once LM_PATH . 'includes/class-lets-meet-db.php';
+require_once LM_PATH . 'includes/class-lets-meet-services.php';
+require_once LM_PATH . 'includes/class-lets-meet-admin.php';
 require_once LM_PATH . 'includes/class-lets-meet-loader.php';
 
 /* ── Activation ───────────────────────────────────────────────────── */

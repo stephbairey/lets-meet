@@ -18,5 +18,14 @@ class Lets_Meet_Loader {
 		// Check for DB schema upgrades on every admin load.
 		$db = new Lets_Meet_Db();
 		add_action( 'admin_init', [ $db, 'maybe_upgrade' ] );
+
+		// Admin: menu, assets, form handlers.
+		$services = new Lets_Meet_Services();
+		$admin    = new Lets_Meet_Admin( $services );
+
+		add_action( 'admin_init', [ $admin, 'handle_early_actions' ] );
+		add_action( 'admin_menu', [ $admin, 'register_menu' ] );
+		add_action( 'admin_enqueue_scripts', [ $admin, 'enqueue_admin_assets' ] );
+		add_action( 'admin_post_lm_save_service', [ $admin, 'handle_save_service' ] );
 	}
 }
