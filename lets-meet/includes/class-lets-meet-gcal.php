@@ -462,6 +462,26 @@ class Lets_Meet_Gcal {
 	}
 
 	/**
+	 * Prewarm FreeBusy transient cache for the next 7 days.
+	 *
+	 * Called by the daily `lm_prewarm_gcal` cron event. Best-effort only —
+	 * the on-demand path is always the source of truth.
+	 */
+	public function prewarm_cache() {
+		if ( ! $this->is_connected() ) {
+			return;
+		}
+
+		$tz    = wp_timezone();
+		$today = current_datetime()->setTimezone( $tz );
+
+		for ( $i = 0; $i < 7; $i++ ) {
+			$date = $today->modify( "+{$i} days" )->format( 'Y-m-d' );
+			$this->get_busy( $date, $tz );
+		}
+	}
+
+	/**
 	 * Parse FreeBusy busy array into DateTimeImmutable intervals.
 	 *
 	 * @param array        $busy_data Raw busy array from Google.
@@ -615,10 +635,13 @@ class Lets_Meet_Gcal {
 
 			// On 401, refresh the token and retry with the new token.
 			if ( 401 === $code && 0 === $attempt ) {
-				$this->refresh_access_token();
-				$new_token = $this->get_access_token();
-				if ( $new_token ) {
-					$access_token = $new_token;
+				$tokens = $this->get_tokens();
+				if ( $tokens ) {
+					$this->refresh_access_token( $tokens );
+					$new_token = $this->get_access_token();
+					if ( $new_token ) {
+						$access_token = $new_token;
+					}
 				}
 			}
 
@@ -666,10 +689,13 @@ class Lets_Meet_Gcal {
 
 			// On 401, refresh the token and retry with the new token.
 			if ( 401 === $code && 0 === $attempt ) {
-				$this->refresh_access_token();
-				$new_token = $this->get_access_token();
-				if ( $new_token ) {
-					$args['headers']['Authorization'] = 'Bearer ' . $new_token;
+				$tokens = $this->get_tokens();
+				if ( $tokens ) {
+					$this->refresh_access_token( $tokens );
+					$new_token = $this->get_access_token();
+					if ( $new_token ) {
+						$args['headers']['Authorization'] = 'Bearer ' . $new_token;
+					}
 				}
 			}
 

@@ -1087,7 +1087,12 @@ class Lets_Meet_Admin {
 			$this->services->update( $service_id, $validated );
 			$redirect = admin_url( 'admin.php?page=lets-meet-services&updated=1' );
 		} else {
-			$this->services->create( $validated );
+			$result = $this->services->create( $validated );
+			if ( false === $result ) {
+				set_transient( 'lm_admin_error_' . get_current_user_id(), __( 'Failed to create service. Please try again.', 'lets-meet' ), 30 );
+				wp_safe_redirect( wp_get_referer() );
+				exit;
+			}
 			$redirect = admin_url( 'admin.php?page=lets-meet-services&added=1' );
 		}
 

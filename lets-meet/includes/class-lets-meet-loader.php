@@ -34,11 +34,12 @@ class Lets_Meet_Loader {
 		add_action( 'admin_post_lm_save_service', [ $admin, 'handle_save_service' ] );
 		add_action( 'admin_post_lm_save_settings', [ $admin, 'handle_save_settings' ] );
 
-		// Google Calendar: OAuth callback, credentials, admin notice.
+		// Google Calendar: OAuth callback, credentials, admin notice, prewarm cron.
 		add_action( 'admin_post_lm_gcal_callback', [ $gcal, 'handle_oauth_callback' ] );
 		add_action( 'admin_post_lm_save_gcal_settings', [ $admin, 'handle_save_gcal_settings' ] );
 		add_action( 'admin_post_lm_gcal_disconnect', [ $admin, 'handle_gcal_disconnect' ] );
 		add_action( 'admin_notices', [ $gcal, 'maybe_show_admin_notice' ] );
+		add_action( 'lm_prewarm_gcal', [ $gcal, 'prewarm_cache' ] );
 
 		// Frontend: shortcode, assets, AJAX.
 		$public = new Lets_Meet_Public( $services, $availability, $bookings );

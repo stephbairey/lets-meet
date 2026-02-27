@@ -252,7 +252,7 @@
 			.then(function (response) {
 				slotsLoading.classList.add('lm-hidden');
 
-				if (!response.success || !response.data.slots.length) {
+				if (!response.success || !response.data || !response.data.slots || !response.data.slots.length) {
 					slotsEmpty.classList.remove('lm-hidden');
 					return;
 				}
