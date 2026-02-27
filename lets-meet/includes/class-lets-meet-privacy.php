@@ -57,8 +57,14 @@ class Lets_Meet_Privacy {
 	 * }
 	 */
 	public function export_personal_data( $email_address, $page = 1 ) {
+		$email_address = sanitize_email( $email_address );
+		if ( '' === $email_address ) {
+			return [ 'data' => [], 'done' => true ];
+		}
+
 		global $wpdb;
 
+		$page     = max( 1, absint( $page ) );
 		$per_page = 50;
 		$offset   = ( $page - 1 ) * $per_page;
 		$table    = $wpdb->prefix . 'lm_bookings';
@@ -127,7 +133,12 @@ class Lets_Meet_Privacy {
 				],
 				[
 					'name'  => __( 'Booked on', 'lets-meet' ),
-					'value' => $booking->created_at,
+					'value' => ! empty( $booking->created_at )
+						? wp_date(
+							get_option( 'date_format' ) . ' ' . get_option( 'time_format' ),
+							strtotime( $booking->created_at )
+						)
+						: '',
 				],
 			];
 
@@ -162,6 +173,11 @@ class Lets_Meet_Privacy {
 	 * }
 	 */
 	public function erase_personal_data( $email_address, $page = 1 ) {
+		$email_address = sanitize_email( $email_address );
+		if ( '' === $email_address ) {
+			return [ 'items_removed' => 0, 'items_retained' => 0, 'messages' => [], 'done' => true ];
+		}
+
 		global $wpdb;
 
 		$per_page = 50;
@@ -194,14 +210,15 @@ class Lets_Meet_Privacy {
 			$updated = $wpdb->update(
 				$table,
 				[
-					'client_name'  => $deleted_label,
-					'client_email' => $deleted_label,
-					'client_phone' => $deleted_label,
-					'client_notes' => $deleted_label,
-					'updated_at'   => current_datetime()->format( 'Y-m-d H:i:s' ),
+					'client_name'   => $deleted_label,
+					'client_email'  => $deleted_label,
+					'client_phone'  => $deleted_label,
+					'client_notes'  => $deleted_label,
+					'gcal_event_id' => '',
+					'updated_at'    => current_datetime()->format( 'Y-m-d H:i:s' ),
 				],
 				[ 'id' => absint( $id ) ],
-				[ '%s', '%s', '%s', '%s', '%s' ],
+				[ '%s', '%s', '%s', '%s', '%s', '%s' ],
 				[ '%d' ]
 			);
 
