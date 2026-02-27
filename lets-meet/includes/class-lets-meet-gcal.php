@@ -613,6 +613,15 @@ class Lets_Meet_Gcal {
 				return true;
 			}
 
+			// On 401, refresh the token and retry with the new token.
+			if ( 401 === $code && 0 === $attempt ) {
+				$this->refresh_access_token();
+				$new_token = $this->get_access_token();
+				if ( $new_token ) {
+					$access_token = $new_token;
+				}
+			}
+
 			lm_log( 'GCal event delete failed.', [
 				'attempt'  => $attempt + 1,
 				'status'   => $code,
@@ -653,6 +662,15 @@ class Lets_Meet_Gcal {
 
 			if ( $code >= 200 && $code < 300 ) {
 				return is_array( $body ) ? $body : [];
+			}
+
+			// On 401, refresh the token and retry with the new token.
+			if ( 401 === $code && 0 === $attempt ) {
+				$this->refresh_access_token();
+				$new_token = $this->get_access_token();
+				if ( $new_token ) {
+					$args['headers']['Authorization'] = 'Bearer ' . $new_token;
+				}
 			}
 
 			lm_log( 'GCal API error response.', [
