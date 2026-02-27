@@ -43,6 +43,7 @@ require_once LM_PATH . 'includes/class-lets-meet-bookings-table.php';
 require_once LM_PATH . 'includes/class-lets-meet-email.php';
 require_once LM_PATH . 'includes/class-lets-meet-admin.php';
 require_once LM_PATH . 'includes/class-lets-meet-public.php';
+require_once LM_PATH . 'includes/class-lets-meet-privacy.php';
 require_once LM_PATH . 'includes/class-lets-meet-loader.php';
 
 /* ── Activation ───────────────────────────────────────────────────── */

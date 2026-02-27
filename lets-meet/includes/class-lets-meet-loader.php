@@ -53,5 +53,10 @@ class Lets_Meet_Loader {
 		// Email confirmations.
 		$email = new Lets_Meet_Email();
 		add_action( 'lm_booking_created', [ $email, 'send_confirmation' ], 10, 2 );
+
+		// Privacy: GDPR personal data exporter + eraser.
+		$privacy = new Lets_Meet_Privacy();
+		add_filter( 'wp_privacy_personal_data_exporters', [ $privacy, 'register_exporter' ] );
+		add_filter( 'wp_privacy_personal_data_erasers', [ $privacy, 'register_eraser' ] );
 	}
 }
