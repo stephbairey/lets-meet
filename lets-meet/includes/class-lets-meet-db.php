@@ -42,11 +42,13 @@ class Lets_Meet_Db {
 			site_timezone  VARCHAR(100) NOT NULL,
 			status  VARCHAR(20) NOT NULL DEFAULT 'confirmed',
 			gcal_event_id  VARCHAR(255) DEFAULT '',
+			cancel_token  VARCHAR(64) NOT NULL DEFAULT '',
 			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY idx_start_status (start_utc, status),
-			KEY idx_email (client_email)
+			KEY idx_email (client_email),
+			KEY idx_cancel_token (cancel_token)
 		) {$charset_collate};";
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';

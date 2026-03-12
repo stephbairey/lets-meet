@@ -37,7 +37,7 @@ class Lets_Meet_Availability {
 	 * @param int    $service_id Service ID.
 	 * @return array Array of available start times as 'H:i' strings in site timezone.
 	 */
-	public function get_available_slots( $date, $service_id ) {
+	public function get_available_slots( $date, $service_id, $exclude_booking_id = 0 ) {
 		$tz         = wp_timezone();
 		$settings   = get_option( 'lm_settings', [] );
 		$service_id = absint( $service_id );
@@ -91,7 +91,7 @@ class Lets_Meet_Availability {
 		$day_end_utc   = $day_end->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
 
 		// 5a. DB bookings.
-		$busy = $this->get_busy_from_db( $day_start_utc, $day_end_utc, $tz );
+		$busy = $this->get_busy_from_db( $day_start_utc, $day_end_utc, $tz, absint( $exclude_booking_id ) );
 
 		// 5b. Google Calendar busy times.
 		$busy = array_merge( $busy, $this->gcal->get_busy( $date, $tz ) );
@@ -149,17 +149,23 @@ class Lets_Meet_Availability {
 	 * @param DateTimeZone $tz            Site timezone.
 	 * @return array Array of ['start' => DateTimeImmutable, 'end' => DateTimeImmutable].
 	 */
-	private function get_busy_from_db( $day_start_utc, $day_end_utc, $tz ) {
+	private function get_busy_from_db( $day_start_utc, $day_end_utc, $tz, $exclude_booking_id = 0 ) {
 		global $wpdb;
 		$table = $wpdb->prefix . 'lm_bookings';
 
-		$bookings = $wpdb->get_results( $wpdb->prepare(
+		$sql = $wpdb->prepare(
 			"SELECT start_utc, duration FROM {$table}
 			 WHERE start_utc >= %s AND start_utc < %s AND status = %s",
 			$day_start_utc,
 			$day_end_utc,
 			'confirmed'
-		) );
+		);
+
+		if ( $exclude_booking_id > 0 ) {
+			$sql .= $wpdb->prepare( ' AND id != %d', $exclude_booking_id );
+		}
+
+		$bookings = $wpdb->get_results( $sql );
 
 		$busy = [];
 		$utc  = new DateTimeZone( 'UTC' );

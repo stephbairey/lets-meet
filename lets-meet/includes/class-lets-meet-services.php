@@ -185,12 +185,12 @@ class Lets_Meet_Services {
 
 		// Duration: required, 15–240 in 15-min increments.
 		$duration = absint( $data['duration'] ?? 0 );
-		if ( $duration < 15 || $duration > 240 || $duration % 15 !== 0 ) {
+		if ( $duration < 15 || $duration > 240 || $duration % 5 !== 0 ) {
 			$errors[] = __( 'Duration must be between 15 and 240 minutes in 15-minute increments.', 'lets-meet' );
 		}
 
-		// Description: optional, sanitized.
-		$description = sanitize_textarea_field( $data['description'] ?? '' );
+		// Description: optional, allows safe HTML (links, bold, etc.).
+		$description = wp_kses_post( $data['description'] ?? '' );
 
 		if ( ! empty( $errors ) ) {
 			return new WP_Error( 'lm_validation', implode( ' ', $errors ) );

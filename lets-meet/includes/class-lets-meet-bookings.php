@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Booking creation, cancellation, and concurrency control.
+ * Booking creation, cancellation, reschedule, and concurrency control.
  *
  * Uses three layers of double-booking prevention:
  * 1. Fresh availability re-check (live FreeBusy + fresh DB query)
@@ -159,11 +159,13 @@ class Lets_Meet_Bookings {
 			return new \WP_Error( 'server_busy', __( 'Server is busy. Please try again in a moment.', 'lets-meet' ) );
 		}
 
+		$cancel_token = bin2hex( random_bytes( 32 ) );
+
 		try {
 			// ── Layer 3: Atomic INSERT with NOT EXISTS ────────────────
 			$rows = $wpdb->query( $wpdb->prepare(
-				"INSERT INTO {$table} (service_id, client_name, client_email, client_phone, client_notes, start_utc, duration, site_timezone, status)
-				SELECT %d, %s, %s, %s, %s, %s, %d, %s, %s
+				"INSERT INTO {$table} (service_id, client_name, client_email, client_phone, client_notes, start_utc, duration, site_timezone, status, cancel_token)
+				SELECT %d, %s, %s, %s, %s, %s, %d, %s, %s, %s
 				FROM DUAL
 				WHERE NOT EXISTS (
 					SELECT 1 FROM {$table}
@@ -180,6 +182,7 @@ class Lets_Meet_Bookings {
 				$duration,
 				$tz->getName(),
 				'confirmed',
+				$cancel_token,
 				$end_utc_str,    // candidate end < existing start? No overlap.
 				$start_utc_str   // existing end > candidate start? Overlap.
 			) );
@@ -238,6 +241,7 @@ class Lets_Meet_Bookings {
 			'duration'      => $duration,
 			'site_timezone' => $tz->getName(),
 			'gcal_event_id' => $gcal_event_id ?: '',
+			'cancel_token'  => $cancel_token,
 			'date_display'  => wp_date( 'l, F j, Y', $start_local->getTimestamp() ),
 			'time_display'  => wp_date( 'g:i A', $start_local->getTimestamp() ),
 		];
@@ -310,6 +314,176 @@ class Lets_Meet_Bookings {
 		return true;
 	}
 
+	/* ── Booking reschedule ───────────────────────────────────────── */
+
+	/**
+	 * Reschedule a booking to a new date/time.
+	 *
+	 * Uses the same concurrency protection as create().
+	 *
+	 * @param int    $booking_id Booking ID.
+	 * @param string $new_date   'Y-m-d' date in site timezone.
+	 * @param string $new_time   'H:i' time in site timezone.
+	 * @return array|WP_Error Updated booking data on success, WP_Error on failure.
+	 */
+	public function reschedule( $booking_id, $new_date, $new_time ) {
+		global $wpdb;
+
+		$booking_id = absint( $booking_id );
+		$new_date   = sanitize_text_field( $new_date );
+		$new_time   = sanitize_text_field( $new_time );
+		$table      = $wpdb->prefix . 'lm_bookings';
+
+		// Validate the booking exists and is confirmed.
+		$booking = $this->get( $booking_id );
+		if ( ! $booking ) {
+			return new \WP_Error( 'not_found', __( 'Booking not found.', 'lets-meet' ) );
+		}
+		if ( 'confirmed' !== $booking->status ) {
+			return new \WP_Error( 'already_cancelled', __( 'This booking has been cancelled.', 'lets-meet' ) );
+		}
+
+		// Validate date format.
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $new_date ) ) {
+			return new \WP_Error( 'invalid_date', __( 'Invalid date format.', 'lets-meet' ) );
+		}
+		$date_parts = explode( '-', $new_date );
+		if ( ! checkdate( (int) $date_parts[1], (int) $date_parts[2], (int) $date_parts[0] ) ) {
+			return new \WP_Error( 'invalid_date', __( 'Invalid date.', 'lets-meet' ) );
+		}
+
+		// Validate time format.
+		if ( ! preg_match( '/^\d{2}:\d{2}$/', $new_time ) ) {
+			return new \WP_Error( 'invalid_time', __( 'Invalid time format.', 'lets-meet' ) );
+		}
+
+		// Get the service for duration.
+		$service = $this->services->get( $booking->service_id );
+		if ( ! $service || ! $service->is_active ) {
+			return new \WP_Error( 'invalid_service', __( 'This service is no longer available.', 'lets-meet' ) );
+		}
+
+		$duration = absint( $service->duration );
+		$tz       = wp_timezone();
+
+		// Build new start time in UTC.
+		try {
+			$start_local = new \DateTimeImmutable( $new_date . ' ' . $new_time . ':00', $tz );
+		} catch ( \Exception $e ) {
+			return new \WP_Error( 'invalid_datetime', __( 'Invalid date or time.', 'lets-meet' ) );
+		}
+		$start_utc     = $start_local->setTimezone( new \DateTimeZone( 'UTC' ) );
+		$end_utc       = $start_utc->modify( "+{$duration} minutes" );
+		$start_utc_str = $start_utc->format( 'Y-m-d H:i:s' );
+		$end_utc_str   = $end_utc->format( 'Y-m-d H:i:s' );
+
+		// Layer 1: Fresh availability re-check (exclude this booking).
+		$this->gcal->get_busy_fresh( $new_date, $tz );
+		$available_slots = $this->availability->get_available_slots( $new_date, $booking->service_id, $booking_id );
+
+		if ( ! in_array( $new_time, $available_slots, true ) ) {
+			return new \WP_Error( 'slot_taken', __( 'Sorry, this time slot is no longer available. Please choose another time.', 'lets-meet' ) );
+		}
+
+		// Layer 2: MySQL GET_LOCK().
+		$lock_name = 'lm_book_' . $new_date;
+
+		$acquired = $wpdb->get_var( $wpdb->prepare(
+			"SELECT GET_LOCK(%s, 10)",
+			$lock_name
+		) );
+
+		if ( ! $acquired ) {
+			lm_log( 'GET_LOCK acquisition failed for reschedule.', [ 'lock' => $lock_name ] );
+			return new \WP_Error( 'server_busy', __( 'Server is busy. Please try again in a moment.', 'lets-meet' ) );
+		}
+
+		try {
+			// Layer 3: Atomic UPDATE with NOT EXISTS overlap guard.
+			$rows = $wpdb->query( $wpdb->prepare(
+				"UPDATE {$table}
+				SET start_utc = %s, site_timezone = %s, updated_at = NOW()
+				WHERE id = %d
+				AND status = 'confirmed'
+				AND NOT EXISTS (
+					SELECT 1 FROM (SELECT id, start_utc, duration FROM {$table} WHERE status = 'confirmed' AND id != %d) AS other
+					WHERE other.start_utc < %s
+					AND DATE_ADD(other.start_utc, INTERVAL other.duration MINUTE) > %s
+				)",
+				$start_utc_str,
+				$tz->getName(),
+				$booking_id,
+				$booking_id,
+				$end_utc_str,
+				$start_utc_str
+			) );
+
+			if ( 0 === $rows || false === $rows ) {
+				if ( false === $rows ) {
+					lm_log( 'Reschedule UPDATE query error.', [ 'error' => $wpdb->last_error ] );
+				} else {
+					lm_log( 'Reschedule UPDATE 0 rows — slot taken by overlap guard.' );
+				}
+				return new \WP_Error( 'slot_taken', __( 'Sorry, this time slot was just booked. Please choose another time.', 'lets-meet' ) );
+			}
+
+		} finally {
+			$wpdb->query( $wpdb->prepare(
+				"SELECT RELEASE_LOCK(%s)",
+				$lock_name
+			) );
+		}
+
+		// Update GCal event.
+		if ( ! empty( $booking->gcal_event_id ) ) {
+			$this->gcal->update_event( $booking->gcal_event_id, [
+				'booking_id' => $booking_id,
+				'start_utc'  => $start_utc_str,
+				'duration'   => $duration,
+			] );
+		} elseif ( $this->gcal->is_connected() ) {
+			$gcal_event_id = $this->gcal->push_event( [
+				'booking_id'   => $booking_id,
+				'start_utc'    => $start_utc_str,
+				'duration'     => $duration,
+				'client_name'  => $booking->client_name,
+				'client_email' => $booking->client_email,
+				'client_phone' => $booking->client_phone,
+				'client_notes' => $booking->client_notes,
+				'service_name' => $service->name,
+			] );
+			if ( $gcal_event_id ) {
+				$wpdb->update( $table, [ 'gcal_event_id' => $gcal_event_id ], [ 'id' => $booking_id ], [ '%s' ], [ '%d' ] );
+			}
+		}
+
+		$booking_data = [
+			'booking_id'    => $booking_id,
+			'service_id'    => $booking->service_id,
+			'service_name'  => $service->name,
+			'client_name'   => $booking->client_name,
+			'client_email'  => $booking->client_email,
+			'client_phone'  => $booking->client_phone,
+			'client_notes'  => $booking->client_notes,
+			'start_utc'     => $start_utc_str,
+			'duration'      => $duration,
+			'site_timezone' => $tz->getName(),
+			'cancel_token'  => $booking->cancel_token,
+			'date_display'  => wp_date( 'l, F j, Y', $start_local->getTimestamp() ),
+			'time_display'  => wp_date( 'g:i A', $start_local->getTimestamp() ),
+		];
+
+		/**
+		 * Fires after a booking is rescheduled.
+		 *
+		 * @param int   $booking_id   Booking ID.
+		 * @param array $booking_data Updated booking data.
+		 */
+		do_action( 'lm_booking_rescheduled', $booking_id, $booking_data );
+
+		return $booking_data;
+	}
+
 	/* ── Helpers ───────────────────────────────────────────────────── */
 
 	/**
@@ -324,6 +498,26 @@ class Lets_Meet_Bookings {
 		return $wpdb->get_row( $wpdb->prepare(
 			"SELECT * FROM {$wpdb->prefix}lm_bookings WHERE id = %d",
 			absint( $booking_id )
+		) );
+	}
+
+	/**
+	 * Get a booking by its cancel/reschedule token.
+	 *
+	 * @param string $token 64-character hex token.
+	 * @return object|null Booking row or null.
+	 */
+	public function get_by_token( $token ) {
+		global $wpdb;
+
+		$token = sanitize_text_field( $token );
+		if ( '' === $token || strlen( $token ) !== 64 ) {
+			return null;
+		}
+
+		return $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$wpdb->prefix}lm_bookings WHERE cancel_token = %s",
+			$token
 		) );
 	}
 }

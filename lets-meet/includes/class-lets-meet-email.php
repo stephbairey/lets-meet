@@ -158,6 +158,139 @@ class Lets_Meet_Email {
 		}
 	}
 
+	/* ── Cancellation email ──────────────────────────────────────── */
+
+	/**
+	 * Send cancellation confirmation email to the client.
+	 *
+	 * Hooked to lm_booking_cancelled action.
+	 *
+	 * @param int $booking_id Booking ID.
+	 */
+	public function send_cancellation_email( $booking_id ) {
+		global $wpdb;
+
+		$booking = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$wpdb->prefix}lm_bookings WHERE id = %d",
+			absint( $booking_id )
+		) );
+
+		if ( ! $booking || ! is_email( $booking->client_email ) ) {
+			return;
+		}
+
+		// Build display values.
+		try {
+			$tz = new \DateTimeZone( $booking->site_timezone ?: wp_timezone_string() );
+		} catch ( \Exception $e ) {
+			$tz = wp_timezone();
+		}
+		$start = new \DateTimeImmutable( $booking->start_utc, new \DateTimeZone( 'UTC' ) );
+		$local = $start->setTimezone( $tz );
+
+		$services = new Lets_Meet_Services();
+		$service  = $services->get( $booking->service_id );
+
+		$booking_data = [
+			'booking_id'   => $booking->id,
+			'service_name' => $service ? $service->name : __( '(deleted)', 'lets-meet' ),
+			'client_name'  => $booking->client_name,
+			'client_email' => $booking->client_email,
+			'duration'     => $booking->duration,
+			'date_display' => wp_date( 'l, F j, Y', $local->getTimestamp() ),
+			'time_display' => wp_date( 'g:i A', $local->getTimestamp() ),
+		];
+
+		$settings = get_option( 'lm_settings', [] );
+
+		$subject = sprintf(
+			/* translators: %s: service name */
+			__( 'Your booking has been cancelled — %s', 'lets-meet' ),
+			sanitize_text_field( $booking_data['service_name'] )
+		);
+
+		$body = $this->render_template( 'cancellation-client', $booking_data );
+
+		$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
+		$reply_to = $settings['admin_email'] ?? get_option( 'admin_email' );
+		if ( is_email( $reply_to ) ) {
+			$headers[] = 'Reply-To: ' . $reply_to;
+		}
+
+		wp_mail( $booking->client_email, $subject, $body, $headers );
+	}
+
+	/* ── Reschedule email ────────────────────────────────────────── */
+
+	/**
+	 * Send reschedule confirmation emails.
+	 *
+	 * Hooked to lm_booking_rescheduled action.
+	 *
+	 * @param int   $booking_id   Booking ID.
+	 * @param array $booking_data Updated booking data.
+	 */
+	public function send_reschedule_confirmation( $booking_id, $booking_data ) {
+		$this->send_reschedule_client_email( $booking_data );
+		$this->send_reschedule_admin_email( $booking_data );
+	}
+
+	/**
+	 * Send the reschedule confirmation to the client.
+	 */
+	private function send_reschedule_client_email( $booking_data ) {
+		if ( ! is_email( $booking_data['client_email'] ?? '' ) ) {
+			return;
+		}
+
+		$settings = get_option( 'lm_settings', [] );
+
+		$subject = sprintf(
+			/* translators: %s: service name */
+			__( 'Your booking has been rescheduled — %s', 'lets-meet' ),
+			sanitize_text_field( $booking_data['service_name'] )
+		);
+
+		$body = $this->render_template( 'reschedule-client', $booking_data );
+
+		$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
+		$reply_to = $settings['admin_email'] ?? get_option( 'admin_email' );
+		if ( is_email( $reply_to ) ) {
+			$headers[] = 'Reply-To: ' . $reply_to;
+		}
+
+		wp_mail( $booking_data['client_email'], $subject, $body, $headers );
+	}
+
+	/**
+	 * Send the reschedule notification to the admin.
+	 */
+	private function send_reschedule_admin_email( $booking_data ) {
+		$settings = get_option( 'lm_settings', [] );
+
+		if ( empty( $settings['admin_notify'] ) ) {
+			return;
+		}
+
+		$admin_email = $settings['admin_email'] ?? get_option( 'admin_email' );
+		if ( ! is_email( $admin_email ) ) {
+			return;
+		}
+
+		$subject = sprintf(
+			/* translators: 1: client name, 2: service name */
+			__( 'Booking rescheduled: %1$s — %2$s', 'lets-meet' ),
+			sanitize_text_field( $booking_data['client_name'] ),
+			sanitize_text_field( $booking_data['service_name'] )
+		);
+
+		$body = $this->render_template( 'reschedule-admin', $booking_data );
+
+		$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
+
+		wp_mail( $admin_email, $subject, $body, $headers );
+	}
+
 	/* ── Template rendering ───────────────────────────────────────── */
 
 	/**

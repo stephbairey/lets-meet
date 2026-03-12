@@ -96,6 +96,183 @@ class Lets_Meet_Public {
 		return ob_get_clean();
 	}
 
+	/* ── Client cancel/reschedule pages ──────────────────────────── */
+
+	/**
+	 * Intercept ?lm_action=cancel|reschedule&lm_token=... on any page.
+	 *
+	 * Hooked to template_redirect.
+	 */
+	public function handle_client_action() {
+		$action = sanitize_text_field( $_GET['lm_action'] ?? '' );
+		$token  = sanitize_text_field( $_GET['lm_token'] ?? '' );
+
+		if ( '' === $action || '' === $token ) {
+			return;
+		}
+
+		if ( ! in_array( $action, [ 'cancel', 'reschedule' ], true ) ) {
+			return;
+		}
+
+		$booking = $this->bookings->get_by_token( $token );
+
+		if ( ! $booking ) {
+			status_header( 404 );
+			get_header();
+			echo '<div style="max-width: 520px; margin: 60px auto; text-align: center; padding: 0 20px;">';
+			echo '<h2>' . esc_html__( 'Booking Not Found', 'lets-meet' ) . '</h2>';
+			echo '<p>' . esc_html__( 'This link is no longer valid.', 'lets-meet' ) . '</p>';
+			echo '</div>';
+			get_footer();
+			exit;
+		}
+
+		// Build display values.
+		try {
+			$tz = new \DateTimeZone( $booking->site_timezone ?: wp_timezone_string() );
+		} catch ( \Exception $e ) {
+			$tz = wp_timezone();
+		}
+		$start        = new \DateTimeImmutable( $booking->start_utc, new \DateTimeZone( 'UTC' ) );
+		$local        = $start->setTimezone( $tz );
+		$service      = $this->services->get( $booking->service_id );
+		$service_name = $service ? $service->name : __( '(deleted)', 'lets-meet' );
+		$date_display = wp_date( 'l, F j, Y', $local->getTimestamp() );
+		$time_display = wp_date( 'g:i A', $local->getTimestamp() );
+
+		if ( 'cancel' === $action ) {
+			if ( 'cancelled' === $booking->status ) {
+				// Already cancelled — show confirmation.
+				$confirmed = true;
+				include LM_PATH . 'templates/frontend/cancel-page.php';
+				exit;
+			}
+
+			// Check if cancellation was just performed (redirect back).
+			$confirmed = ! empty( $_GET['lm_cancelled'] );
+			include LM_PATH . 'templates/frontend/cancel-page.php';
+			exit;
+		}
+
+		if ( 'reschedule' === $action ) {
+			if ( 'cancelled' === $booking->status ) {
+				status_header( 410 );
+				get_header();
+				echo '<div style="max-width: 520px; margin: 60px auto; text-align: center; padding: 0 20px;">';
+				echo '<h2>' . esc_html__( 'Booking Cancelled', 'lets-meet' ) . '</h2>';
+				echo '<p>' . esc_html__( 'This booking has already been cancelled and cannot be rescheduled.', 'lets-meet' ) . '</p>';
+				echo '</div>';
+				get_footer();
+				exit;
+			}
+
+			// Enqueue assets for the reschedule page.
+			wp_enqueue_style( 'lm-public', LM_URL . 'assets/css/public.css', [], LM_VERSION );
+			wp_enqueue_script( 'lm-public', LM_URL . 'assets/js/public.js', [], LM_VERSION, true );
+			wp_localize_script( 'lm-public', 'lmData', [
+				'ajaxUrl'  => admin_url( 'admin-ajax.php' ),
+				'nonce'    => wp_create_nonce( 'lm_frontend_nonce' ),
+				'horizon'  => absint( ( get_option( 'lm_settings', [] ) )['horizon'] ?? 60 ),
+				'timezone' => wp_timezone_string(),
+				'i18n'     => [
+					'loading'  => __( 'Loading...', 'lets-meet' ),
+					'noSlots'  => __( 'No available times on this date.', 'lets-meet' ),
+				],
+			] );
+
+			$settings       = get_option( 'lm_settings', [] );
+			$horizon        = absint( $settings['horizon'] ?? 60 );
+			$service_id     = $booking->service_id;
+			$availability   = get_option( 'lm_availability', [] );
+			$available_days = [];
+			$day_map        = [
+				'monday' => 1, 'tuesday' => 2, 'wednesday' => 3,
+				'thursday' => 4, 'friday' => 5, 'saturday' => 6, 'sunday' => 0,
+			];
+			foreach ( $availability as $day_name => $windows ) {
+				if ( ! empty( $windows ) ) {
+					foreach ( $windows as $w ) {
+						if ( ! empty( $w['start'] ) && ! empty( $w['end'] ) ) {
+							$available_days[] = $day_map[ $day_name ] ?? -1;
+							break;
+						}
+					}
+				}
+			}
+
+			include LM_PATH . 'templates/frontend/reschedule-page.php';
+			exit;
+		}
+	}
+
+	/**
+	 * Handle client cancellation form POST.
+	 *
+	 * Hooked to admin_post_lm_client_cancel and admin_post_nopriv_lm_client_cancel.
+	 */
+	public function handle_client_cancel() {
+		$token = sanitize_text_field( $_POST['lm_token'] ?? '' );
+
+		if ( ! wp_verify_nonce( $_POST['_wpnonce'] ?? '', 'lm_client_cancel_' . $token ) ) {
+			wp_die( esc_html__( 'Invalid or expired link. Please try again.', 'lets-meet' ) );
+		}
+
+		$booking = $this->bookings->get_by_token( $token );
+		if ( ! $booking ) {
+			wp_die( esc_html__( 'Booking not found.', 'lets-meet' ) );
+		}
+
+		if ( 'confirmed' === $booking->status ) {
+			$this->bookings->cancel( $booking->id );
+		}
+
+		$redirect = add_query_arg( [
+			'lm_action'    => 'cancel',
+			'lm_token'     => $token,
+			'lm_cancelled' => '1',
+		], home_url( '/' ) );
+
+		wp_safe_redirect( $redirect );
+		exit;
+	}
+
+	/**
+	 * AJAX handler: reschedule a booking (client-facing).
+	 */
+	public function ajax_reschedule_booking() {
+		check_ajax_referer( 'lm_frontend_nonce', 'nonce' );
+
+		$token    = sanitize_text_field( $_POST['token'] ?? '' );
+		$new_date = sanitize_text_field( $_POST['date'] ?? '' );
+		$new_time = sanitize_text_field( $_POST['time'] ?? '' );
+
+		$booking = $this->bookings->get_by_token( $token );
+		if ( ! $booking ) {
+			wp_send_json_error( [ 'message' => __( 'Booking not found.', 'lets-meet' ) ] );
+			return;
+		}
+
+		if ( 'confirmed' !== $booking->status ) {
+			wp_send_json_error( [ 'message' => __( 'This booking has been cancelled.', 'lets-meet' ) ] );
+			return;
+		}
+
+		$result = $this->bookings->reschedule( $booking->id, $new_date, $new_time );
+
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+			return;
+		}
+
+		wp_send_json_success( [
+			'service'  => $result['service_name'],
+			'date'     => $result['date_display'],
+			'time'     => $result['time_display'],
+			'duration' => sprintf( __( '%d minutes', 'lets-meet' ), $result['duration'] ),
+		] );
+	}
+
 	/* ── Asset enqueueing ─────────────────────────────────────────── */
 
 	/**

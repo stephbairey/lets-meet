@@ -4,14 +4,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Client booking confirmation email template.
+ * Admin booking reschedule notification email template.
  *
  * Available variables:
- * @var array  $args     Booking data (service_name, date_display, time_display, duration, client_name, etc.)
- * @var array  $settings Plugin settings (confirm_msg, admin_email, etc.)
+ * @var array  $args     Booking data.
+ * @var array  $settings Plugin settings.
  *
  * This template can be overridden by copying it to:
- *   your-theme/lets-meet/emails/confirmation-client.php
+ *   your-theme/lets-meet/emails/reschedule-admin.php
  */
 ?>
 <!DOCTYPE html>
@@ -29,7 +29,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<tr>
 						<td style="background-color: #0073aa; padding: 24px 32px; text-align: center;">
 							<h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600;">
-								<?php esc_html_e( 'Booking Confirmed', 'lets-meet' ); ?>
+								<?php esc_html_e( 'Booking Rescheduled', 'lets-meet' ); ?>
 							</h1>
 						</td>
 					</tr>
@@ -37,20 +37,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<!-- Body -->
 					<tr>
 						<td style="padding: 32px;">
-							<p style="margin: 0 0 16px; font-size: 16px; color: #333333;">
-								<?php
-								printf(
-									/* translators: %s: client name */
-									esc_html__( 'Hi %s,', 'lets-meet' ),
-									esc_html( $args['client_name'] )
-								);
-								?>
-							</p>
 							<p style="margin: 0 0 24px; font-size: 15px; color: #555555; line-height: 1.6;">
-								<?php esc_html_e( 'Your session has been confirmed. Here are your booking details:', 'lets-meet' ); ?>
+								<?php esc_html_e( 'A booking has been rescheduled to a new time.', 'lets-meet' ); ?>
 							</p>
 
-							<!-- Booking details box -->
+							<!-- Booking details -->
 							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f6fc; border-radius: 6px; margin-bottom: 24px;">
 								<tr>
 									<td style="padding: 20px 24px;">
@@ -60,11 +51,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 												<td style="padding: 6px 0; font-size: 14px; color: #1e1e1e; font-weight: 600;"><?php echo esc_html( $args['service_name'] ); ?></td>
 											</tr>
 											<tr>
-												<td style="padding: 6px 0; font-size: 14px; color: #646970;"><?php esc_html_e( 'Date', 'lets-meet' ); ?></td>
+												<td style="padding: 6px 0; font-size: 14px; color: #646970;"><?php esc_html_e( 'New Date', 'lets-meet' ); ?></td>
 												<td style="padding: 6px 0; font-size: 14px; color: #1e1e1e; font-weight: 600;"><?php echo esc_html( $args['date_display'] ); ?></td>
 											</tr>
 											<tr>
-												<td style="padding: 6px 0; font-size: 14px; color: #646970;"><?php esc_html_e( 'Time', 'lets-meet' ); ?></td>
+												<td style="padding: 6px 0; font-size: 14px; color: #646970;"><?php esc_html_e( 'New Time', 'lets-meet' ); ?></td>
 												<td style="padding: 6px 0; font-size: 14px; color: #1e1e1e; font-weight: 600;"><?php echo esc_html( $args['time_display'] ); ?></td>
 											</tr>
 											<tr>
@@ -72,7 +63,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 												<td style="padding: 6px 0; font-size: 14px; color: #1e1e1e; font-weight: 600;">
 													<?php
 													printf(
-														/* translators: %d: number of minutes */
 														esc_html__( '%d minutes', 'lets-meet' ),
 														absint( $args['duration'] )
 													);
@@ -84,40 +74,31 @@ if ( ! defined( 'ABSPATH' ) ) {
 								</tr>
 							</table>
 
-							<?php
-							$custom_msg = $settings['confirm_msg'] ?? '';
-							if ( '' !== $custom_msg ) :
-							?>
-								<div style="margin: 0 0 24px; font-size: 15px; color: #555555; line-height: 1.6;">
-									<?php echo wp_kses_post( $custom_msg ); ?>
-								</div>
-							<?php endif; ?>
+							<!-- Client details -->
+							<h3 style="margin: 0 0 12px; font-size: 14px; color: #333333;"><?php esc_html_e( 'Client Details', 'lets-meet' ); ?></h3>
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+								<tr>
+									<td style="padding: 4px 0; font-size: 14px; color: #646970; width: 80px;"><?php esc_html_e( 'Name', 'lets-meet' ); ?></td>
+									<td style="padding: 4px 0; font-size: 14px; color: #1e1e1e;"><?php echo esc_html( $args['client_name'] ); ?></td>
+								</tr>
+								<tr>
+									<td style="padding: 4px 0; font-size: 14px; color: #646970;"><?php esc_html_e( 'Email', 'lets-meet' ); ?></td>
+									<td style="padding: 4px 0; font-size: 14px; color: #1e1e1e;"><?php echo esc_html( $args['client_email'] ); ?></td>
+								</tr>
+								<?php if ( ! empty( $args['client_phone'] ) ) : ?>
+								<tr>
+									<td style="padding: 4px 0; font-size: 14px; color: #646970;"><?php esc_html_e( 'Phone', 'lets-meet' ); ?></td>
+									<td style="padding: 4px 0; font-size: 14px; color: #1e1e1e;"><?php echo esc_html( $args['client_phone'] ); ?></td>
+								</tr>
+								<?php endif; ?>
+							</table>
 
-							<?php if ( ! empty( $args['cancel_token'] ) ) :
-								$cancel_url = add_query_arg( [
-									'lm_action' => 'cancel',
-									'lm_token'  => $args['cancel_token'],
-								], home_url( '/' ) );
-								$reschedule_url = add_query_arg( [
-									'lm_action' => 'reschedule',
-									'lm_token'  => $args['cancel_token'],
-								], home_url( '/' ) );
-							?>
-							<p style="margin: 24px 0 0; text-align: center;">
-								<a href="<?php echo esc_url( $reschedule_url ); ?>"
-								   style="display: inline-block; background-color: #0073aa; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600; margin-right: 8px;">
-									<?php esc_html_e( 'Reschedule Booking', 'lets-meet' ); ?>
-								</a>
-								<a href="<?php echo esc_url( $cancel_url ); ?>"
-								   style="display: inline-block; background-color: #ffffff; color: #b32d2e; text-decoration: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600; border: 1px solid #b32d2e;">
-									<?php esc_html_e( 'Cancel Booking', 'lets-meet' ); ?>
+							<p style="text-align: center;">
+								<a href="<?php echo esc_url( admin_url( 'admin.php?page=lets-meet&action=view&booking_id=' . absint( $args['booking_id'] ) ) ); ?>"
+								   style="display: inline-block; background-color: #0073aa; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600;">
+									<?php esc_html_e( 'View Booking', 'lets-meet' ); ?>
 								</a>
 							</p>
-							<?php else : ?>
-							<p style="margin: 0; font-size: 14px; color: #888888;">
-								<?php esc_html_e( 'If you need to make changes, please contact us directly.', 'lets-meet' ); ?>
-							</p>
-							<?php endif; ?>
 						</td>
 					</tr>
 

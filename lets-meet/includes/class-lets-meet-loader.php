@@ -33,6 +33,7 @@ class Lets_Meet_Loader {
 		add_action( 'admin_enqueue_scripts', [ $admin, 'enqueue_admin_assets' ] );
 		add_action( 'admin_post_lm_save_service', [ $admin, 'handle_save_service' ] );
 		add_action( 'admin_post_lm_save_settings', [ $admin, 'handle_save_settings' ] );
+		add_action( 'admin_post_lm_admin_reschedule', [ $admin, 'handle_admin_reschedule' ] );
 
 		// Google Calendar: OAuth callback, credentials, admin notice, prewarm cron.
 		add_action( 'admin_post_lm_gcal_callback', [ $gcal, 'handle_oauth_callback' ] );
@@ -46,14 +47,21 @@ class Lets_Meet_Loader {
 
 		add_action( 'init', [ $public, 'register_shortcode' ] );
 		add_action( 'wp_enqueue_scripts', [ $public, 'enqueue_public_assets' ] );
+		add_action( 'template_redirect', [ $public, 'handle_client_action' ] );
 		add_action( 'wp_ajax_lm_get_slots', [ $public, 'ajax_get_slots' ] );
 		add_action( 'wp_ajax_nopriv_lm_get_slots', [ $public, 'ajax_get_slots' ] );
 		add_action( 'wp_ajax_lm_submit_booking', [ $public, 'ajax_submit_booking' ] );
 		add_action( 'wp_ajax_nopriv_lm_submit_booking', [ $public, 'ajax_submit_booking' ] );
+		add_action( 'wp_ajax_lm_reschedule_booking', [ $public, 'ajax_reschedule_booking' ] );
+		add_action( 'wp_ajax_nopriv_lm_reschedule_booking', [ $public, 'ajax_reschedule_booking' ] );
+		add_action( 'admin_post_lm_client_cancel', [ $public, 'handle_client_cancel' ] );
+		add_action( 'admin_post_nopriv_lm_client_cancel', [ $public, 'handle_client_cancel' ] );
 
 		// Email confirmations.
 		$email = new Lets_Meet_Email();
 		add_action( 'lm_booking_created', [ $email, 'send_confirmation' ], 10, 2 );
+		add_action( 'lm_booking_cancelled', [ $email, 'send_cancellation_email' ], 10, 1 );
+		add_action( 'lm_booking_rescheduled', [ $email, 'send_reschedule_confirmation' ], 10, 2 );
 
 		// Privacy: GDPR personal data exporter + eraser.
 		$privacy = new Lets_Meet_Privacy();

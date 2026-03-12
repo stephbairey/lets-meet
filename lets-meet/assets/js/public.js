@@ -465,3 +465,264 @@
 		init();
 	}
 })();
+
+/* ── Reschedule Widget ──────────────────────────────────────── */
+
+(function () {
+	'use strict';
+
+	var rWidget, rCalBody, rMonthLabel, rPrevBtn, rNextBtn;
+	var rSlotsList, rSlotsPrompt, rSlotsLoading, rSlotsEmpty;
+	var rConfirm, rSummary, rSubmitBtn, rErrorBox, rSuccess, rSuccessDetails;
+	var rConfig;
+	var rState = {
+		selectedDate: '',
+		selectedTime: '',
+		selectedTimeDisplay: '',
+		currentMonth: null,
+	};
+
+	function initReschedule() {
+		rWidget = document.getElementById('lm-reschedule-widget');
+		if (!rWidget) return;
+
+		var configEl = document.getElementById('lm-reschedule-config');
+		if (!configEl) return;
+		try {
+			rConfig = JSON.parse(configEl.textContent);
+		} catch (e) {
+			return;
+		}
+
+		rCalBody      = rWidget.querySelector('.lm-cal-body');
+		rMonthLabel   = rWidget.querySelector('.lm-cal-month-label');
+		rPrevBtn      = rWidget.querySelector('.lm-cal-prev');
+		rNextBtn      = rWidget.querySelector('.lm-cal-next');
+		rSlotsList    = rWidget.querySelector('.lm-slots-list');
+		rSlotsPrompt  = rWidget.querySelector('.lm-slots-prompt');
+		rSlotsLoading = rWidget.querySelector('.lm-slots-loading');
+		rSlotsEmpty   = rWidget.querySelector('.lm-slots-empty');
+		rConfirm      = rWidget.querySelector('.lm-reschedule-confirm');
+		rSummary      = rWidget.querySelector('.lm-reschedule-summary');
+		rSubmitBtn    = rWidget.querySelector('.lm-btn--reschedule');
+		rErrorBox     = rWidget.querySelector('.lm-reschedule-error');
+		rSuccess      = rWidget.querySelector('.lm-reschedule-success');
+		rSuccessDetails = rWidget.querySelector('.lm-reschedule-success-details');
+
+		var now = new Date();
+		rState.currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+		rPrevBtn.addEventListener('click', function () {
+			rState.currentMonth.setMonth(rState.currentMonth.getMonth() - 1);
+			renderRCal();
+		});
+		rNextBtn.addEventListener('click', function () {
+			rState.currentMonth.setMonth(rState.currentMonth.getMonth() + 1);
+			renderRCal();
+		});
+
+		rSubmitBtn.addEventListener('click', handleRescheduleSubmit);
+
+		renderRCal();
+	}
+
+	function renderRCal() {
+		var year  = rState.currentMonth.getFullYear();
+		var month = rState.currentMonth.getMonth();
+
+		var monthNames = [
+			'January', 'February', 'March', 'April', 'May', 'June',
+			'July', 'August', 'September', 'October', 'November', 'December'
+		];
+		rMonthLabel.textContent = monthNames[month] + ' ' + year;
+
+		var now = new Date();
+		var thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+		rPrevBtn.disabled = (rState.currentMonth <= thisMonth);
+
+		var maxDate = new Date();
+		maxDate.setDate(maxDate.getDate() + rConfig.horizon);
+		var maxMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+		rNextBtn.disabled = (rState.currentMonth >= maxMonth);
+
+		var firstDay    = new Date(year, month, 1).getDay();
+		var daysInMonth = new Date(year, month + 1, 0).getDate();
+		var today       = rPad(now);
+
+		var html = '';
+		var dayNum = 1;
+		var started = false;
+
+		for (var row = 0; row < 6; row++) {
+			if (dayNum > daysInMonth) break;
+			html += '<tr>';
+			for (var col = 0; col < 7; col++) {
+				if (!started && col < firstDay) { html += '<td></td>'; continue; }
+				started = true;
+				if (dayNum > daysInMonth) { html += '<td></td>'; continue; }
+
+				var dateStr = year + '-' + rPadN(month + 1) + '-' + rPadN(dayNum);
+				var dow     = new Date(year, month, dayNum).getDay();
+				var isPast  = dateStr < today;
+				var beyondH = dateStr > rPad(maxDate);
+				var hasAvail = rConfig.availableDays.indexOf(dow) !== -1;
+				var disabled = isPast || beyondH || !hasAvail;
+				var selected = dateStr === rState.selectedDate;
+
+				var cls = 'lm-cal-day';
+				if (disabled) cls += ' lm-cal-day--disabled';
+				if (dateStr === today) cls += ' lm-cal-day--today';
+				if (selected) cls += ' lm-cal-day--selected';
+
+				if (disabled) {
+					html += '<td><span class="' + cls + '">' + dayNum + '</span></td>';
+				} else {
+					html += '<td><button type="button" class="' + cls + '" data-date="' + dateStr + '">' + dayNum + '</button></td>';
+				}
+				dayNum++;
+			}
+			html += '</tr>';
+		}
+
+		rCalBody.innerHTML = html;
+
+		rCalBody.querySelectorAll('button.lm-cal-day').forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				rHandleDayClick(this.getAttribute('data-date'));
+			});
+		});
+	}
+
+	function rHandleDayClick(dateStr) {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
+
+		rState.selectedDate = dateStr;
+		rState.selectedTime = '';
+		rConfirm.classList.add('lm-hidden');
+
+		rCalBody.querySelectorAll('.lm-cal-day--selected').forEach(function (el) {
+			el.classList.remove('lm-cal-day--selected');
+		});
+		var sel = rCalBody.querySelector('[data-date="' + dateStr + '"]');
+		if (sel) sel.classList.add('lm-cal-day--selected');
+
+		rFetchSlots(dateStr);
+	}
+
+	function rFetchSlots(dateStr) {
+		rSlotsPrompt.classList.add('lm-hidden');
+		rSlotsEmpty.classList.add('lm-hidden');
+		rSlotsList.innerHTML = '';
+		rSlotsLoading.classList.remove('lm-hidden');
+
+		var data = new FormData();
+		data.append('action', 'lm_get_slots');
+		data.append('nonce', lmData.nonce);
+		data.append('date', dateStr);
+		data.append('service_id', rConfig.serviceId);
+
+		fetch(lmData.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data })
+			.then(function (res) { return res.json(); })
+			.then(function (response) {
+				rSlotsLoading.classList.add('lm-hidden');
+				if (!response.success || !response.data || !response.data.slots || !response.data.slots.length) {
+					rSlotsEmpty.classList.remove('lm-hidden');
+					return;
+				}
+				rRenderSlots(response.data.slots);
+			})
+			.catch(function () {
+				rSlotsLoading.classList.add('lm-hidden');
+				rSlotsEmpty.classList.remove('lm-hidden');
+			});
+	}
+
+	function rRenderSlots(slots) {
+		var html = '';
+		slots.forEach(function (slot) {
+			html += '<button type="button" class="lm-slot-btn" data-time="' +
+				rEsc(slot.value) + '" data-display="' + rEsc(slot.display) + '">' +
+				rEscH(slot.display) + '</button>';
+		});
+		rSlotsList.innerHTML = html;
+
+		rSlotsList.querySelectorAll('.lm-slot-btn').forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				rState.selectedTime = this.getAttribute('data-time');
+				rState.selectedTimeDisplay = this.getAttribute('data-display');
+				rSlotsList.querySelectorAll('.lm-slot-btn--selected').forEach(function (el) {
+					el.classList.remove('lm-slot-btn--selected');
+				});
+				this.classList.add('lm-slot-btn--selected');
+
+				// Show confirm button with summary.
+				var dateObj = new Date(rState.selectedDate + 'T00:00:00');
+				var dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+				var monthNames = [
+					'January', 'February', 'March', 'April', 'May', 'June',
+					'July', 'August', 'September', 'October', 'November', 'December'
+				];
+				var dateText = dayNames[dateObj.getDay()] + ', ' +
+					monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate() + ', ' + dateObj.getFullYear();
+				rSummary.textContent = 'New time: ' + dateText + ' at ' + rState.selectedTimeDisplay;
+				rConfirm.classList.remove('lm-hidden');
+				rErrorBox.classList.add('lm-hidden');
+				rConfirm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			});
+		});
+	}
+
+	function handleRescheduleSubmit() {
+		rSubmitBtn.disabled = true;
+		rSubmitBtn.textContent = 'Rescheduling...';
+		rErrorBox.classList.add('lm-hidden');
+
+		var data = new FormData();
+		data.append('action', 'lm_reschedule_booking');
+		data.append('nonce', lmData.nonce);
+		data.append('token', rConfig.token);
+		data.append('date', rState.selectedDate);
+		data.append('time', rState.selectedTime);
+
+		fetch(lmData.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data })
+			.then(function (res) { return res.json(); })
+			.then(function (response) {
+				rSubmitBtn.disabled = false;
+				rSubmitBtn.textContent = 'Confirm Reschedule';
+
+				if (!response.success) {
+					rErrorBox.textContent = response.data && response.data.message ? response.data.message : 'Something went wrong.';
+					rErrorBox.classList.remove('lm-hidden');
+					return;
+				}
+
+				// Show success, hide everything else.
+				rWidget.querySelector('.lm-calendar-wrap').style.display = 'none';
+				rWidget.querySelector('.lm-slots-wrap').style.display = 'none';
+				rConfirm.style.display = 'none';
+
+				var d = response.data;
+				rSuccessDetails.innerHTML = '<strong>' + rEscH(d.service) + '</strong><br>' +
+					rEscH(d.date) + '<br>' + rEscH(d.time) + '<br>' + rEscH(d.duration);
+				rSuccess.classList.remove('lm-hidden');
+				rSuccess.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			})
+			.catch(function () {
+				rSubmitBtn.disabled = false;
+				rSubmitBtn.textContent = 'Confirm Reschedule';
+				rErrorBox.textContent = 'Something went wrong. Please try again.';
+				rErrorBox.classList.remove('lm-hidden');
+			});
+	}
+
+	function rPadN(n) { return n < 10 ? '0' + n : '' + n; }
+	function rPad(d) { return d.getFullYear() + '-' + rPadN(d.getMonth() + 1) + '-' + rPadN(d.getDate()); }
+	function rEscH(str) { var d = document.createElement('div'); d.appendChild(document.createTextNode(str)); return d.innerHTML; }
+	function rEsc(str) { return str.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initReschedule);
+	} else {
+		initReschedule();
+	}
+})();

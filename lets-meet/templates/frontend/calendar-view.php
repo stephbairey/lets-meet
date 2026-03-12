@@ -37,7 +37,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 						?>
 					</span>
 					<?php if ( ! empty( $svc->description ) ) : ?>
-						<span class="lm-service-desc"><?php echo esc_html( $svc->description ); ?></span>
+						<span class="lm-service-desc"><?php echo wp_kses_post( $svc->description ); ?></span>
 					<?php endif; ?>
 				</span>
 			</label>

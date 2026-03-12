@@ -87,6 +87,20 @@ class Lets_Meet_Admin {
 			LM_VERSION,
 			true
 		);
+
+		// Localize data for admin reschedule page.
+		$page   = sanitize_text_field( $_GET['page'] ?? '' );
+		$action = sanitize_text_field( $_GET['action'] ?? '' );
+		if ( 'lets-meet' === $page && 'reschedule' === $action && ! empty( $_GET['booking_id'] ) ) {
+			$booking = $this->bookings->get( absint( $_GET['booking_id'] ) );
+			if ( $booking ) {
+				wp_localize_script( 'lm-admin', 'lmAdminData', [
+					'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+					'nonce'     => wp_create_nonce( 'lm_frontend_nonce' ),
+					'serviceId' => absint( $booking->service_id ),
+				] );
+			}
+		}
 	}
 
 	/**
@@ -138,6 +152,11 @@ class Lets_Meet_Admin {
 
 		if ( 'view' === $action && ! empty( $_GET['booking_id'] ) ) {
 			$this->render_booking_detail( absint( $_GET['booking_id'] ) );
+			return;
+		}
+
+		if ( 'reschedule' === $action && ! empty( $_GET['booking_id'] ) ) {
+			$this->render_admin_reschedule( absint( $_GET['booking_id'] ) );
 			return;
 		}
 
@@ -206,6 +225,21 @@ class Lets_Meet_Admin {
 
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'Booking Details', 'lets-meet' ) . '</h1>';
+
+		// Reschedule success notice.
+		if ( ! empty( $_GET['rescheduled'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>'
+				. esc_html__( 'Booking rescheduled successfully.', 'lets-meet' ) . '</p></div>';
+		}
+
+		// Error notice.
+		if ( ! empty( $_GET['lm_error'] ) ) {
+			$error_msg = get_transient( 'lm_admin_error_' . get_current_user_id() );
+			if ( $error_msg ) {
+				delete_transient( 'lm_admin_error_' . get_current_user_id() );
+				echo '<div class="notice notice-error is-dismissible"><p>' . esc_html( $error_msg ) . '</p></div>';
+			}
+		}
 
 		echo '<a href="' . esc_url( admin_url( 'admin.php?page=lets-meet' ) ) . '">&larr; '
 			. esc_html__( 'Back to Bookings', 'lets-meet' ) . '</a>';
@@ -280,8 +314,14 @@ class Lets_Meet_Admin {
 
 		echo '</table>';
 
-		// Cancel button.
+		// Action buttons.
 		if ( 'cancelled' !== $booking->status ) {
+			$reschedule_url = add_query_arg( [
+				'page'       => 'lets-meet',
+				'action'     => 'reschedule',
+				'booking_id' => absint( $booking->id ),
+			], admin_url( 'admin.php' ) );
+
 			$cancel_url = wp_nonce_url(
 				add_query_arg( [
 					'page'       => 'lets-meet',
@@ -292,6 +332,8 @@ class Lets_Meet_Admin {
 			);
 
 			echo '<p class="submit">';
+			echo '<a href="' . esc_url( $reschedule_url ) . '" class="button button-primary">'
+				. esc_html__( 'Reschedule', 'lets-meet' ) . '</a> ';
 			echo '<a href="' . esc_url( $cancel_url ) . '" class="button button-secondary lm-cancel-link" style="color: #b32d2e;">'
 				. esc_html__( 'Cancel Booking', 'lets-meet' ) . '</a>';
 			echo '</p>';
@@ -324,6 +366,120 @@ class Lets_Meet_Admin {
 		wp_safe_redirect( add_query_arg( [
 			'page'      => 'lets-meet',
 			'cancelled' => $cancelled,
+		], admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/* ── Admin reschedule ─────────────────────────────────────────── */
+
+	/**
+	 * Render the admin reschedule page.
+	 *
+	 * @param int $booking_id Booking ID.
+	 */
+	private function render_admin_reschedule( $booking_id ) {
+		$booking = $this->bookings->get( $booking_id );
+
+		if ( ! $booking || 'cancelled' === $booking->status ) {
+			echo '<div class="wrap">';
+			echo '<h1>' . esc_html__( 'Cannot Reschedule', 'lets-meet' ) . '</h1>';
+			echo '<p>' . esc_html__( 'This booking does not exist or has been cancelled.', 'lets-meet' ) . '</p>';
+			echo '<a href="' . esc_url( admin_url( 'admin.php?page=lets-meet' ) ) . '">&larr; '
+				. esc_html__( 'Back to Bookings', 'lets-meet' ) . '</a>';
+			echo '</div>';
+			return;
+		}
+
+		// Convert for display.
+		try {
+			$tz = new \DateTimeZone( $booking->site_timezone ?: wp_timezone_string() );
+		} catch ( \Exception $e ) {
+			$tz = wp_timezone();
+		}
+		$start        = new \DateTimeImmutable( $booking->start_utc, new \DateTimeZone( 'UTC' ) );
+		$local        = $start->setTimezone( $tz );
+		$service      = $this->services->get( $booking->service_id );
+		$service_name = $service ? $service->name : __( '(deleted)', 'lets-meet' );
+
+		echo '<div class="wrap">';
+		echo '<h1>' . esc_html__( 'Reschedule Booking', 'lets-meet' ) . '</h1>';
+		echo '<a href="' . esc_url( admin_url( 'admin.php?page=lets-meet&action=view&booking_id=' . absint( $booking->id ) ) ) . '">&larr; '
+			. esc_html__( 'Back to Booking', 'lets-meet' ) . '</a>';
+
+		// Current booking summary.
+		echo '<div style="background: #f0f6fc; border-radius: 6px; padding: 16px 20px; margin: 16px 0 24px; max-width: 500px;">';
+		echo '<p style="margin: 0 0 4px; font-size: 13px; color: #646970; text-transform: uppercase;">' . esc_html__( 'Current Booking', 'lets-meet' ) . '</p>';
+		echo '<p style="margin: 0; font-weight: 600;">' . esc_html( $service_name ) . '</p>';
+		echo '<p style="margin: 4px 0 0;">' . esc_html( wp_date( 'l, F j, Y', $local->getTimestamp() ) ) . ' &mdash; ' . esc_html( wp_date( 'g:i A', $local->getTimestamp() ) ) . '</p>';
+		echo '</div>';
+
+		// Date picker form.
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" id="lm-admin-reschedule-form">';
+		echo '<input type="hidden" name="action" value="lm_admin_reschedule">';
+		echo '<input type="hidden" name="booking_id" value="' . absint( $booking->id ) . '">';
+		wp_nonce_field( 'lm_admin_reschedule_' . $booking->id, '_wpnonce' );
+
+		echo '<table class="form-table"><tbody>';
+
+		// Date input.
+		echo '<tr><th scope="row"><label for="lm-new-date">' . esc_html__( 'New Date', 'lets-meet' ) . '</label></th>';
+		$settings = get_option( 'lm_settings', [] );
+		$min_date = current_datetime()->format( 'Y-m-d' );
+		$max_date = current_datetime()->modify( '+' . absint( $settings['horizon'] ?? 60 ) . ' days' )->format( 'Y-m-d' );
+		echo '<td><input type="date" id="lm-new-date" name="new_date" min="' . esc_attr( $min_date ) . '" max="' . esc_attr( $max_date ) . '" required></td></tr>';
+
+		// Time slot select (populated via JS after date change).
+		echo '<tr><th scope="row"><label for="lm-new-time">' . esc_html__( 'New Time', 'lets-meet' ) . '</label></th>';
+		echo '<td><select id="lm-new-time" name="new_time" required disabled>';
+		echo '<option value="">' . esc_html__( 'Select a date first', 'lets-meet' ) . '</option>';
+		echo '</select><span id="lm-slots-spinner" style="display:none; margin-left: 8px;">' . esc_html__( 'Loading...', 'lets-meet' ) . '</span></td></tr>';
+
+		echo '</tbody></table>';
+
+		echo '<p class="submit"><button type="submit" class="button button-primary" id="lm-reschedule-submit" disabled>'
+			. esc_html__( 'Confirm Reschedule', 'lets-meet' ) . '</button></p>';
+		echo '</form>';
+		echo '</div>';
+	}
+
+	/**
+	 * Handle admin reschedule form POST.
+	 *
+	 * Hooked to admin_post_lm_admin_reschedule.
+	 */
+	public function handle_admin_reschedule() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized.', 'lets-meet' ) );
+		}
+
+		$booking_id = absint( $_POST['booking_id'] ?? 0 );
+
+		if ( ! wp_verify_nonce( $_POST['_wpnonce'] ?? '', 'lm_admin_reschedule_' . $booking_id ) ) {
+			wp_die( esc_html__( 'Invalid nonce. Please try again.', 'lets-meet' ) );
+		}
+
+		$new_date = sanitize_text_field( $_POST['new_date'] ?? '' );
+		$new_time = sanitize_text_field( $_POST['new_time'] ?? '' );
+
+		$result = $this->bookings->reschedule( $booking_id, $new_date, $new_time );
+
+		if ( is_wp_error( $result ) ) {
+			// Store error and redirect back.
+			set_transient( 'lm_admin_error_' . get_current_user_id(), $result->get_error_message(), 30 );
+			wp_safe_redirect( add_query_arg( [
+				'page'       => 'lets-meet',
+				'action'     => 'reschedule',
+				'booking_id' => $booking_id,
+				'lm_error'   => '1',
+			], admin_url( 'admin.php' ) ) );
+			exit;
+		}
+
+		wp_safe_redirect( add_query_arg( [
+			'page'          => 'lets-meet',
+			'action'        => 'view',
+			'booking_id'    => $booking_id,
+			'rescheduled'   => '1',
 		], admin_url( 'admin.php' ) ) );
 		exit;
 	}
@@ -998,7 +1154,7 @@ class Lets_Meet_Admin {
 		}
 
 		$settings['admin_email']  = $admin_email;
-		$settings['confirm_msg']  = sanitize_textarea_field( $_POST['lm_confirm_msg'] ?? '' );
+		$settings['confirm_msg']  = wp_kses_post( $_POST['lm_confirm_msg'] ?? '' );
 		$settings['admin_notify'] = ! empty( $_POST['lm_admin_notify'] );
 
 		update_option( 'lm_settings', $settings );
@@ -1279,7 +1435,7 @@ class Lets_Meet_Admin {
 					</th>
 					<td>
 						<select id="lm-duration" name="duration">
-							<?php for ( $m = 15; $m <= 240; $m += 15 ) : ?>
+							<?php for ( $m = 15; $m <= 240; $m += 5 ) : ?>
 								<option value="<?php echo absint( $m ); ?>"
 									<?php selected( $m, absint( $duration ) ); ?>>
 									<?php

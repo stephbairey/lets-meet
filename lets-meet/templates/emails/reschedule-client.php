@@ -4,14 +4,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Client booking confirmation email template.
+ * Client booking reschedule confirmation email template.
  *
  * Available variables:
- * @var array  $args     Booking data (service_name, date_display, time_display, duration, client_name, etc.)
- * @var array  $settings Plugin settings (confirm_msg, admin_email, etc.)
+ * @var array  $args     Booking data (service_name, date_display, time_display, duration, client_name, cancel_token, etc.)
+ * @var array  $settings Plugin settings.
  *
  * This template can be overridden by copying it to:
- *   your-theme/lets-meet/emails/confirmation-client.php
+ *   your-theme/lets-meet/emails/reschedule-client.php
  */
 ?>
 <!DOCTYPE html>
@@ -29,7 +29,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<tr>
 						<td style="background-color: #0073aa; padding: 24px 32px; text-align: center;">
 							<h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 600;">
-								<?php esc_html_e( 'Booking Confirmed', 'lets-meet' ); ?>
+								<?php esc_html_e( 'Booking Rescheduled', 'lets-meet' ); ?>
 							</h1>
 						</td>
 					</tr>
@@ -47,7 +47,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 								?>
 							</p>
 							<p style="margin: 0 0 24px; font-size: 15px; color: #555555; line-height: 1.6;">
-								<?php esc_html_e( 'Your session has been confirmed. Here are your booking details:', 'lets-meet' ); ?>
+								<?php esc_html_e( 'Your booking has been rescheduled. Here are your updated details:', 'lets-meet' ); ?>
 							</p>
 
 							<!-- Booking details box -->
@@ -84,15 +84,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 								</tr>
 							</table>
 
-							<?php
-							$custom_msg = $settings['confirm_msg'] ?? '';
-							if ( '' !== $custom_msg ) :
-							?>
-								<div style="margin: 0 0 24px; font-size: 15px; color: #555555; line-height: 1.6;">
-									<?php echo wp_kses_post( $custom_msg ); ?>
-								</div>
-							<?php endif; ?>
-
 							<?php if ( ! empty( $args['cancel_token'] ) ) :
 								$cancel_url = add_query_arg( [
 									'lm_action' => 'cancel',
@@ -106,16 +97,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 							<p style="margin: 24px 0 0; text-align: center;">
 								<a href="<?php echo esc_url( $reschedule_url ); ?>"
 								   style="display: inline-block; background-color: #0073aa; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600; margin-right: 8px;">
-									<?php esc_html_e( 'Reschedule Booking', 'lets-meet' ); ?>
+									<?php esc_html_e( 'Reschedule Again', 'lets-meet' ); ?>
 								</a>
 								<a href="<?php echo esc_url( $cancel_url ); ?>"
 								   style="display: inline-block; background-color: #ffffff; color: #b32d2e; text-decoration: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600; border: 1px solid #b32d2e;">
 									<?php esc_html_e( 'Cancel Booking', 'lets-meet' ); ?>
 								</a>
-							</p>
-							<?php else : ?>
-							<p style="margin: 0; font-size: 14px; color: #888888;">
-								<?php esc_html_e( 'If you need to make changes, please contact us directly.', 'lets-meet' ); ?>
 							</p>
 							<?php endif; ?>
 						</td>

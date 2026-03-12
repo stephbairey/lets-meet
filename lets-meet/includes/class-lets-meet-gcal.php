@@ -580,6 +580,55 @@ class Lets_Meet_Gcal {
 	}
 
 	/**
+	 * Update a Google Calendar event's time (for reschedule).
+	 *
+	 * @param string $event_id     GCal event ID.
+	 * @param array  $booking_data Must contain start_utc and duration.
+	 * @return bool True on success.
+	 */
+	public function update_event( $event_id, $booking_data ) {
+		if ( ! $this->is_connected() || '' === $event_id ) {
+			return false;
+		}
+
+		$access_token = $this->get_access_token();
+		if ( ! $access_token ) {
+			return false;
+		}
+
+		$tz    = wp_timezone();
+		$start = new \DateTimeImmutable( $booking_data['start_utc'], new \DateTimeZone( 'UTC' ) );
+		$end   = $start->modify( '+' . absint( $booking_data['duration'] ) . ' minutes' );
+
+		$event = [
+			'start' => [ 'dateTime' => $start->setTimezone( $tz )->format( 'c' ), 'timeZone' => $tz->getName() ],
+			'end'   => [ 'dateTime' => $end->setTimezone( $tz )->format( 'c' ), 'timeZone' => $tz->getName() ],
+		];
+
+		/** This filter is documented in push_event(). */
+		$event = apply_filters( 'lm_gcal_event_data', $event, $booking_data['booking_id'] ?? 0 );
+
+		$cal_id = get_option( 'lm_gcal_calendar_id', 'primary' );
+		$url    = self::API_BASE . '/calendars/' . rawurlencode( $cal_id ) . '/events/' . rawurlencode( $event_id );
+
+		$result = $this->api_request_with_retry( $url, [
+			'method'  => 'PATCH',
+			'headers' => [
+				'Authorization' => 'Bearer ' . $access_token,
+				'Content-Type'  => 'application/json',
+			],
+			'body' => wp_json_encode( $event ),
+		] );
+
+		if ( ! $result ) {
+			lm_log( 'GCal event update failed.', [ 'event_id' => $event_id ] );
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
 	 * Delete a Google Calendar event.
 	 *
 	 * Handles 410 Gone gracefully (event already deleted).
