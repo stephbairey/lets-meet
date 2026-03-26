@@ -1,6 +1,6 @@
 # Let's Meet — User Guide
 
-A lightweight 1-on-1 booking plugin for WordPress. Clients pick a service, choose a date and time from your availability, and book — with optional Google Calendar sync.
+A lightweight 1-on-1 booking plugin for WordPress. Clients pick a service, choose a date and time from your availability, and book — with optional Google Calendar sync and automatic Zoom meetings.
 
 ---
 
@@ -12,10 +12,12 @@ A lightweight 1-on-1 booking plugin for WordPress. Clients pick a service, choos
 4. [Booking Rules](#booking-rules)
 5. [Adding the Booking Widget to a Page](#adding-the-booking-widget-to-a-page)
 6. [Google Calendar Integration](#google-calendar-integration)
-7. [Email Settings](#email-settings)
-8. [Managing Bookings](#managing-bookings)
-9. [General Settings](#general-settings)
-10. [Privacy & GDPR](#privacy--gdpr)
+7. [Zoom Integration](#zoom-integration)
+8. [Email Settings](#email-settings)
+9. [Managing Bookings](#managing-bookings)
+10. [Client Cancel & Reschedule](#client-cancel--reschedule)
+11. [General Settings](#general-settings)
+12. [Privacy & GDPR](#privacy--gdpr)
 
 ---
 
@@ -25,7 +27,7 @@ After activating the plugin, a new **Let's Meet** menu appears in your WordPress
 
 - **Bookings** — View and manage all client bookings
 - **Services** — Create the services clients can book
-- **Settings** — Configure availability, Google Calendar, emails, and general options
+- **Settings** — Configure availability, Google Calendar, Zoom, emails, and general options
 
 **Minimum setup to accept bookings:**
 
@@ -44,6 +46,7 @@ Go to **Let's Meet > Services** and click **Add New Service**.
 | Name | Yes | What clients see (e.g., "30-Minute Consultation") |
 | Duration | Yes | Session length: 15 to 240 minutes, in 15-minute increments |
 | Description | No | Brief description shown to clients on the booking form |
+| Enable Zoom | No | Auto-create a Zoom meeting for each booking of this service (requires Zoom to be connected — see [Zoom Integration](#zoom-integration)) |
 
 Services can be **deactivated** instead of deleted — this preserves booking history while hiding the service from clients. Click **Deactivate** next to any service to toggle it off, and **Activate** to bring it back.
 
@@ -112,7 +115,8 @@ The booking widget walks clients through 4 steps:
 Google Calendar integration is **optional**. When connected, the plugin:
 
 - Checks your Google Calendar for conflicts when calculating available slots (so existing events block those times)
-- Creates a calendar event for each new booking
+- Creates a calendar event for each new booking (includes the Zoom link in the event description if Zoom is enabled)
+- Updates the calendar event when a booking is rescheduled
 - Deletes the calendar event when a booking is cancelled
 
 Without Google Calendar, the plugin still works — it just uses its own database to track availability.
@@ -154,6 +158,60 @@ If the connection breaks (e.g., token expires and can't refresh), you'll see a n
 
 ---
 
+## Zoom Integration
+
+Zoom integration is **optional**. When connected and enabled on a service, the plugin:
+
+- Automatically creates a Zoom meeting for each new booking
+- Includes a "Join Zoom Meeting" link in the confirmation email to both client and admin
+- Updates the Zoom meeting time if the booking is rescheduled
+- Deletes the Zoom meeting if the booking is cancelled
+
+If Zoom is not connected or a service doesn't have Zoom enabled, bookings work normally without video conferencing.
+
+### Setup
+
+Go to **Let's Meet > Settings > Zoom**.
+
+#### Step 1: Create a Server-to-Server OAuth App
+
+1. Go to [marketplace.zoom.us](https://marketplace.zoom.us/) and sign in with your Zoom account
+2. Click **Develop > Build App**
+3. Choose **Server-to-Server OAuth** as the app type (do not choose "OAuth" — that is a different type)
+4. Give your app a name (e.g., "My Booking Plugin") and create it
+5. On the **App Credentials** tab, copy the **Account ID**, **Client ID**, and **Client Secret**
+6. Go to the **Scopes** tab and add these scopes:
+   - `meeting:write:meeting:admin` — Create a meeting
+   - `meeting:update:meeting:admin` — Update a meeting (for reschedule)
+   - `meeting:delete:meeting:admin` — Delete a meeting (for cancellation)
+7. Click **Activate** to activate the app
+
+#### Step 2: Connect in WordPress
+
+1. Paste the Account ID, Client ID, and Client Secret into the settings fields
+2. Click **Save Credentials**
+3. Click **Test Connection** to verify everything works
+4. Go to **Let's Meet > Services**, edit each service that should include a Zoom meeting, and check **Enable Zoom**
+
+### How it works
+
+When a client books a Zoom-enabled service:
+
+- A Zoom meeting is created automatically with "join before host" enabled and no waiting room
+- The Zoom join URL appears in the confirmation email sent to the client (as a clickable button) and to the admin
+- The join URL is also shown in the booking details in the admin dashboard
+- If Google Calendar is connected, the Zoom link is included in the calendar event description
+
+### Disconnecting
+
+Click **Disconnect** on the Zoom settings tab. This removes stored credentials. Existing Zoom meetings that were already created are not affected (they remain in your Zoom account).
+
+### If something goes wrong
+
+If a Zoom meeting fails to create (e.g., credentials expire), the booking still succeeds — the client just won't receive a Zoom link. Check the Zoom settings tab for connection status and use **Test Connection** to troubleshoot.
+
+---
+
 ## Email Settings
 
 Go to **Let's Meet > Settings > Email**.
@@ -166,8 +224,11 @@ Go to **Let's Meet > Settings > Email**.
 
 ### Emails sent
 
-- **Client confirmation** — Sent to the client immediately after booking. Includes service name, date, time, duration, and your custom confirmation message (if set).
-- **Admin notification** — Sent to you (the Reply-To Email address) with client details and a link to view the booking in the admin.
+- **Client confirmation** — Sent to the client immediately after booking. Includes service name, date, time, duration, your custom confirmation message (if set), and links to cancel or reschedule. If Zoom is enabled for the service, includes a "Join Zoom Meeting" button.
+- **Admin notification** — Sent to you (the Reply-To Email address) with client details and a link to view the booking in the admin. Includes the Zoom meeting URL if applicable.
+- **Reschedule notification (client)** — Sent to the client when a booking is rescheduled (by admin or by the client themselves). Includes the updated date/time and Zoom link if applicable.
+- **Reschedule notification (admin)** — Sent to you when a client reschedules their own booking.
+- **Cancellation notification (client)** — Sent to the client when their booking is cancelled.
 
 ### Template overrides
 
@@ -176,6 +237,9 @@ To customize the email HTML, copy the template files from the plugin into your t
 ```
 wp-content/plugins/lets-meet/templates/emails/confirmation-client.php
 wp-content/plugins/lets-meet/templates/emails/confirmation-admin.php
+wp-content/plugins/lets-meet/templates/emails/reschedule-client.php
+wp-content/plugins/lets-meet/templates/emails/reschedule-admin.php
+wp-content/plugins/lets-meet/templates/emails/cancellation-client.php
 ```
 
 Copy them to:
@@ -183,6 +247,9 @@ Copy them to:
 ```
 wp-content/themes/your-theme/lets-meet/emails/confirmation-client.php
 wp-content/themes/your-theme/lets-meet/emails/confirmation-admin.php
+wp-content/themes/your-theme/lets-meet/emails/reschedule-client.php
+wp-content/themes/your-theme/lets-meet/emails/reschedule-admin.php
+wp-content/themes/your-theme/lets-meet/emails/cancellation-client.php
 ```
 
 Edit the theme copies. The plugin will use your theme versions automatically.
@@ -199,16 +266,33 @@ Shows all bookings with columns for Date & Time, Client name, Email, Service, an
 
 - **Filter** by status: All, Confirmed, or Cancelled
 - **Sort** by date
-- **View** a booking's full details (client name, email, phone, notes, Google Calendar sync status)
-- **Cancel** a booking (also removes the Google Calendar event if connected)
+- **View** a booking's full details (client name, email, phone, notes, Google Calendar sync status, Zoom meeting link)
+- **Reschedule** a booking — opens a date/time picker to move it to a new slot (updates Google Calendar and Zoom meeting automatically)
+- **Cancel** a booking (also removes the Google Calendar event and Zoom meeting if connected)
 - **Bulk cancel** multiple bookings using the checkboxes
 
 ### Booking Statuses
 
 - **Confirmed** — Active booking
-- **Cancelled** — Cancelled by admin. The time slot becomes available again for new bookings.
+- **Cancelled** — Cancelled by admin or client. The time slot becomes available again for new bookings.
 
-Clients cannot cancel bookings themselves through the plugin. The confirmation email tells them to contact you directly to make changes.
+---
+
+## Client Cancel & Reschedule
+
+Clients can cancel or reschedule their own bookings using secure links included in their confirmation email. No login is required.
+
+### How it works
+
+Each confirmation email includes **Reschedule** and **Cancel** links at the bottom. These links contain a unique, per-booking token — only someone with the link can take action.
+
+- **Cancel** — The client clicks the cancel link, sees their booking details, and confirms cancellation. The booking is marked as cancelled, the time slot opens up, and the associated Google Calendar event and Zoom meeting (if any) are removed.
+- **Reschedule** — The client clicks the reschedule link and sees a date/time picker showing your current availability. After selecting a new time, the booking is updated. Google Calendar and Zoom meeting times are updated automatically. Both client and admin receive a reschedule notification email.
+
+### Limitations
+
+- Clients can only reschedule to times that are currently available (same rules as a new booking)
+- Already-cancelled bookings cannot be rescheduled
 
 ---
 

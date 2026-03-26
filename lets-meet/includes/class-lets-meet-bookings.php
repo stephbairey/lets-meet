@@ -24,10 +24,14 @@ class Lets_Meet_Bookings {
 	/** @var Lets_Meet_Gcal */
 	private $gcal;
 
-	public function __construct( Lets_Meet_Services $services, Lets_Meet_Availability $availability, Lets_Meet_Gcal $gcal ) {
+	/** @var Lets_Meet_Zoom */
+	private $zoom;
+
+	public function __construct( Lets_Meet_Services $services, Lets_Meet_Availability $availability, Lets_Meet_Gcal $gcal, Lets_Meet_Zoom $zoom = null ) {
 		$this->services     = $services;
 		$this->availability = $availability;
 		$this->gcal         = $gcal;
+		$this->zoom         = $zoom;
 	}
 
 	/* ── Rate limiting ────────────────────────────────────────────── */
@@ -120,6 +124,7 @@ class Lets_Meet_Bookings {
 		}
 
 		$duration = absint( $service->duration );
+		$is_paid  = ( (float) ( $service->price ?? 0 ) > 0.00 );
 		$tz       = wp_timezone();
 
 		// Build start time in UTC.
@@ -159,17 +164,19 @@ class Lets_Meet_Bookings {
 			return new \WP_Error( 'server_busy', __( 'Server is busy. Please try again in a moment.', 'lets-meet' ) );
 		}
 
-		$cancel_token = bin2hex( random_bytes( 32 ) );
+		$cancel_token   = bin2hex( random_bytes( 32 ) );
+		$booking_status = $is_paid ? 'pending_payment' : 'confirmed';
+		$payment_status = $is_paid ? 'pending' : 'none';
 
 		try {
 			// ── Layer 3: Atomic INSERT with NOT EXISTS ────────────────
 			$rows = $wpdb->query( $wpdb->prepare(
-				"INSERT INTO {$table} (service_id, client_name, client_email, client_phone, client_notes, start_utc, duration, site_timezone, status, cancel_token)
-				SELECT %d, %s, %s, %s, %s, %s, %d, %s, %s, %s
+				"INSERT INTO {$table} (service_id, client_name, client_email, client_phone, client_notes, start_utc, duration, site_timezone, status, payment_status, cancel_token)
+				SELECT %d, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s
 				FROM DUAL
 				WHERE NOT EXISTS (
 					SELECT 1 FROM {$table}
-					WHERE status = 'confirmed'
+					WHERE status IN ('confirmed', 'pending_payment')
 					AND start_utc < %s
 					AND DATE_ADD(start_utc, INTERVAL duration MINUTE) > %s
 				)",
@@ -181,7 +188,8 @@ class Lets_Meet_Bookings {
 				$start_utc_str,
 				$duration,
 				$tz->getName(),
-				'confirmed',
+				$booking_status,
+				$payment_status,
 				$cancel_token,
 				$end_utc_str,    // candidate end < existing start? No overlap.
 				$start_utc_str   // existing end > candidate start? Overlap.
@@ -206,28 +214,6 @@ class Lets_Meet_Bookings {
 			) );
 		}
 
-		// ── Post-insert: GCal push (non-blocking) ────────────────────
-		$gcal_event_id = $this->gcal->push_event( [
-			'booking_id'   => $booking_id,
-			'start_utc'    => $start_utc_str,
-			'duration'     => $duration,
-			'client_name'  => $name,
-			'client_email' => $email,
-			'client_phone' => $phone,
-			'client_notes' => $notes,
-			'service_name' => $service->name,
-		] );
-
-		if ( $gcal_event_id ) {
-			$wpdb->update(
-				$table,
-				[ 'gcal_event_id' => $gcal_event_id ],
-				[ 'id' => $booking_id ],
-				[ '%s' ],
-				[ '%d' ]
-			);
-		}
-
 		// ── Build booking data for hooks and response ─────────────────
 		$booking_data = [
 			'booking_id'    => $booking_id,
@@ -240,11 +226,71 @@ class Lets_Meet_Bookings {
 			'start_utc'     => $start_utc_str,
 			'duration'      => $duration,
 			'site_timezone' => $tz->getName(),
-			'gcal_event_id' => $gcal_event_id ?: '',
+			'gcal_event_id' => '',
 			'cancel_token'  => $cancel_token,
 			'date_display'  => wp_date( 'l, F j, Y', $start_local->getTimestamp() ),
 			'time_display'  => wp_date( 'g:i A', $start_local->getTimestamp() ),
 		];
+
+		// For paid services: skip GCal + emails (triggered after IPN confirmation).
+		if ( $is_paid ) {
+			$paypal = new Lets_Meet_Paypal();
+			$booking_data['paypal_redirect_url'] = $paypal->get_redirect_url(
+				$booking_id,
+				$service->name,
+				$service->price
+			);
+			return $booking_data;
+		}
+
+		// ── Post-insert: Zoom meeting (non-blocking) ─────────────────
+		if ( $this->zoom && ! empty( $service->zoom_enabled ) && $this->zoom->is_connected() ) {
+			$zoom_result = $this->zoom->create_meeting( [
+				'start_utc'    => $start_utc_str,
+				'duration'     => $duration,
+				'client_name'  => $name,
+				'service_name' => $service->name,
+			] );
+
+			if ( $zoom_result ) {
+				$wpdb->update(
+					$table,
+					[
+						'zoom_meeting_id' => $zoom_result['meeting_id'],
+						'zoom_join_url'   => $zoom_result['join_url'],
+					],
+					[ 'id' => $booking_id ],
+					[ '%s', '%s' ],
+					[ '%d' ]
+				);
+				$booking_data['zoom_join_url']   = $zoom_result['join_url'];
+				$booking_data['zoom_meeting_id'] = $zoom_result['meeting_id'];
+			}
+		}
+
+		// ── Post-insert: GCal push (non-blocking) ────────────────────
+		$gcal_event_id = $this->gcal->push_event( [
+			'booking_id'   => $booking_id,
+			'start_utc'    => $start_utc_str,
+			'duration'     => $duration,
+			'client_name'  => $name,
+			'client_email' => $email,
+			'client_phone' => $phone,
+			'client_notes' => $notes,
+			'service_name' => $service->name,
+			'zoom_join_url' => $booking_data['zoom_join_url'] ?? '',
+		] );
+
+		if ( $gcal_event_id ) {
+			$wpdb->update(
+				$table,
+				[ 'gcal_event_id' => $gcal_event_id ],
+				[ 'id' => $booking_id ],
+				[ '%s' ],
+				[ '%d' ]
+			);
+			$booking_data['gcal_event_id'] = $gcal_event_id;
+		}
 
 		/**
 		 * Fires after a booking is successfully created.
@@ -274,7 +320,7 @@ class Lets_Meet_Bookings {
 		$table      = $wpdb->prefix . 'lm_bookings';
 
 		$booking = $wpdb->get_row( $wpdb->prepare(
-			"SELECT id, gcal_event_id, status FROM {$table} WHERE id = %d",
+			"SELECT id, gcal_event_id, zoom_meeting_id, status FROM {$table} WHERE id = %d",
 			$booking_id
 		) );
 
@@ -302,6 +348,11 @@ class Lets_Meet_Bookings {
 		// Delete GCal event if it exists.
 		if ( ! empty( $booking->gcal_event_id ) ) {
 			$this->gcal->delete_event( $booking->gcal_event_id );
+		}
+
+		// Delete Zoom meeting if it exists.
+		if ( $this->zoom && ! empty( $booking->zoom_meeting_id ) ) {
+			$this->zoom->delete_meeting( $booking->zoom_meeting_id );
 		}
 
 		/**
@@ -406,7 +457,7 @@ class Lets_Meet_Bookings {
 				WHERE id = %d
 				AND status = 'confirmed'
 				AND NOT EXISTS (
-					SELECT 1 FROM (SELECT id, start_utc, duration FROM {$table} WHERE status = 'confirmed' AND id != %d) AS other
+					SELECT 1 FROM (SELECT id, start_utc, duration FROM {$table} WHERE status IN ('confirmed', 'pending_payment') AND id != %d) AS other
 					WHERE other.start_utc < %s
 					AND DATE_ADD(other.start_utc, INTERVAL other.duration MINUTE) > %s
 				)",
@@ -434,6 +485,14 @@ class Lets_Meet_Bookings {
 			) );
 		}
 
+		// Update Zoom meeting time if it exists.
+		if ( $this->zoom && ! empty( $booking->zoom_meeting_id ) ) {
+			$this->zoom->update_meeting( $booking->zoom_meeting_id, [
+				'start_utc' => $start_utc_str,
+				'duration'  => $duration,
+			] );
+		}
+
 		// Update GCal event.
 		if ( ! empty( $booking->gcal_event_id ) ) {
 			$this->gcal->update_event( $booking->gcal_event_id, [
@@ -443,14 +502,15 @@ class Lets_Meet_Bookings {
 			] );
 		} elseif ( $this->gcal->is_connected() ) {
 			$gcal_event_id = $this->gcal->push_event( [
-				'booking_id'   => $booking_id,
-				'start_utc'    => $start_utc_str,
-				'duration'     => $duration,
-				'client_name'  => $booking->client_name,
-				'client_email' => $booking->client_email,
-				'client_phone' => $booking->client_phone,
-				'client_notes' => $booking->client_notes,
-				'service_name' => $service->name,
+				'booking_id'    => $booking_id,
+				'start_utc'     => $start_utc_str,
+				'duration'      => $duration,
+				'client_name'   => $booking->client_name,
+				'client_email'  => $booking->client_email,
+				'client_phone'  => $booking->client_phone,
+				'client_notes'  => $booking->client_notes,
+				'service_name'  => $service->name,
+				'zoom_join_url' => $booking->zoom_join_url ?? '',
 			] );
 			if ( $gcal_event_id ) {
 				$wpdb->update( $table, [ 'gcal_event_id' => $gcal_event_id ], [ 'id' => $booking_id ], [ '%s' ], [ '%d' ] );
@@ -471,6 +531,7 @@ class Lets_Meet_Bookings {
 			'cancel_token'  => $booking->cancel_token,
 			'date_display'  => wp_date( 'l, F j, Y', $start_local->getTimestamp() ),
 			'time_display'  => wp_date( 'g:i A', $start_local->getTimestamp() ),
+			'zoom_join_url' => $booking->zoom_join_url ?? '',
 		];
 
 		/**

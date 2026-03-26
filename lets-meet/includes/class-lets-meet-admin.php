@@ -17,10 +17,14 @@ class Lets_Meet_Admin {
 	/** @var Lets_Meet_Bookings */
 	private $bookings;
 
-	public function __construct( Lets_Meet_Services $services, Lets_Meet_Gcal $gcal, Lets_Meet_Bookings $bookings ) {
+	/** @var Lets_Meet_Zoom */
+	private $zoom;
+
+	public function __construct( Lets_Meet_Services $services, Lets_Meet_Gcal $gcal, Lets_Meet_Bookings $bookings, Lets_Meet_Zoom $zoom = null ) {
 		$this->services = $services;
 		$this->gcal     = $gcal;
 		$this->bookings = $bookings;
+		$this->zoom     = $zoom;
 	}
 
 	/**
@@ -246,11 +250,25 @@ class Lets_Meet_Admin {
 
 		echo '<table class="form-table lm-booking-detail" role="presentation">';
 
+		// Payment override notices.
+		if ( ! empty( $_GET['payment_updated'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>'
+				. esc_html__( 'Payment status updated.', 'lets-meet' ) . '</p></div>';
+		}
+
 		// Status.
-		$status_label = 'confirmed' === $booking->status
-			? __( 'Confirmed', 'lets-meet' )
-			: __( 'Cancelled', 'lets-meet' );
-		$status_class = 'confirmed' === $booking->status ? 'lm-status-confirmed' : 'lm-status-cancelled';
+		$status_labels = [
+			'confirmed'       => __( 'Confirmed', 'lets-meet' ),
+			'cancelled'       => __( 'Cancelled', 'lets-meet' ),
+			'pending_payment' => __( 'Pending Payment', 'lets-meet' ),
+		];
+		$status_label = $status_labels[ $booking->status ] ?? $booking->status;
+		$status_classes = [
+			'confirmed'       => 'lm-status-confirmed',
+			'cancelled'       => 'lm-status-cancelled',
+			'pending_payment' => 'lm-status-pending-payment',
+		];
+		$status_class = $status_classes[ $booking->status ] ?? '';
 
 		echo '<tr><th>' . esc_html__( 'Status', 'lets-meet' ) . '</th><td>'
 			. '<span class="lm-status ' . esc_attr( $status_class ) . '">' . esc_html( $status_label ) . '</span>'
@@ -307,12 +325,93 @@ class Lets_Meet_Admin {
 				. esc_html( $gcal_label ) . '</td></tr>';
 		}
 
+		// Zoom meeting.
+		if ( ! empty( $booking->zoom_join_url ) ) {
+			if ( 'cancelled' === $booking->status ) {
+				echo '<tr><th>' . esc_html__( 'Zoom', 'lets-meet' ) . '</th><td>'
+					. esc_html__( 'Meeting deleted', 'lets-meet' ) . '</td></tr>';
+			} else {
+				echo '<tr><th>' . esc_html__( 'Zoom', 'lets-meet' ) . '</th><td>'
+					. '<a href="' . esc_url( $booking->zoom_join_url ) . '" target="_blank">'
+					. esc_html( $booking->zoom_join_url ) . '</a></td></tr>';
+			}
+		}
+
 		// Booked at.
 		echo '<tr><th>' . esc_html__( 'Booked At', 'lets-meet' ) . '</th><td>'
 			. esc_html( wp_date( 'M j, Y — g:i A', strtotime( $booking->created_at ) ) )
 			. '</td></tr>';
 
+		// Payment section.
+		$ps = $booking->payment_status ?? 'none';
+		if ( 'none' !== $ps ) {
+			$payment_labels = [
+				'pending' => __( 'Pending', 'lets-meet' ),
+				'paid'    => __( 'Paid', 'lets-meet' ),
+				'waived'  => __( 'Waived', 'lets-meet' ),
+			];
+			$payment_classes = [
+				'pending' => 'lm-payment-pending',
+				'paid'    => 'lm-payment-paid',
+				'waived'  => 'lm-payment-waived',
+			];
+
+			echo '<tr><th>' . esc_html__( 'Payment Status', 'lets-meet' ) . '</th><td>'
+				. '<span class="lm-status ' . esc_attr( $payment_classes[ $ps ] ?? '' ) . '">'
+				. esc_html( $payment_labels[ $ps ] ?? $ps ) . '</span>'
+				. '</td></tr>';
+
+			if ( 'paid' === $ps ) {
+				if ( ! empty( $booking->payment_amount ) ) {
+					echo '<tr><th>' . esc_html__( 'Amount Paid', 'lets-meet' ) . '</th><td>$'
+						. esc_html( number_format( (float) $booking->payment_amount, 2 ) ) . '</td></tr>';
+				}
+				if ( ! empty( $booking->payment_txn_id ) ) {
+					echo '<tr><th>' . esc_html__( 'Transaction ID', 'lets-meet' ) . '</th><td>'
+						. esc_html( $booking->payment_txn_id ) . '</td></tr>';
+				}
+				if ( ! empty( $booking->payment_date ) ) {
+					echo '<tr><th>' . esc_html__( 'Payment Date', 'lets-meet' ) . '</th><td>'
+						. esc_html( wp_date( 'M j, Y — g:i A', strtotime( $booking->payment_date ) ) )
+						. '</td></tr>';
+				}
+			}
+		}
+
 		echo '</table>';
+
+		// Manual payment override for pending bookings.
+		if ( 'pending' === $ps ) {
+			echo '<h3>' . esc_html__( 'Payment Actions', 'lets-meet' ) . '</h3>';
+
+			// Mark as Paid form.
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block; margin-right: 12px;">';
+			echo '<input type="hidden" name="action" value="lm_mark_paid">';
+			echo '<input type="hidden" name="booking_id" value="' . absint( $booking->id ) . '">';
+			wp_nonce_field( 'lm_mark_paid_' . $booking->id, 'lm_nonce' );
+			echo '<label>' . esc_html__( 'Amount:', 'lets-meet' ) . ' <input type="number" name="amount" step="0.01" min="0" value="'
+				. esc_attr( $service ? number_format( (float) $service->price, 2, '.', '' ) : '0.00' )
+				. '" style="width:80px;"></label> ';
+			echo '<label>' . esc_html__( 'Txn ID:', 'lets-meet' ) . ' <input type="text" name="txn_id" value="" placeholder="' . esc_attr__( 'optional', 'lets-meet' ) . '" style="width:140px;"></label> ';
+			echo '<button type="submit" class="button button-primary">' . esc_html__( 'Mark as Paid', 'lets-meet' ) . '</button>';
+			echo '</form>';
+
+			// Mark as Waived form.
+			$waive_url = wp_nonce_url(
+				add_query_arg( [
+					'page'       => 'lets-meet',
+					'action'     => 'view',
+					'booking_id' => absint( $booking->id ),
+				], admin_url( 'admin.php' ) ),
+				'lm_mark_waived_' . $booking->id
+			);
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;">';
+			echo '<input type="hidden" name="action" value="lm_mark_waived">';
+			echo '<input type="hidden" name="booking_id" value="' . absint( $booking->id ) . '">';
+			wp_nonce_field( 'lm_mark_waived_' . $booking->id, 'lm_nonce' );
+			echo '<button type="submit" class="button">' . esc_html__( 'Mark as Waived', 'lets-meet' ) . '</button>';
+			echo '</form>';
+		}
 
 		// Action buttons.
 		if ( 'cancelled' !== $booking->status ) {
@@ -513,6 +612,189 @@ class Lets_Meet_Admin {
 		exit;
 	}
 
+	/* ── Payment override handlers ────────────────────────────────── */
+
+	/**
+	 * Handle admin marking a booking as paid.
+	 */
+	public function handle_mark_paid() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized', 'lets-meet' ) );
+		}
+
+		$booking_id = absint( $_POST['booking_id'] ?? 0 );
+		check_admin_referer( 'lm_mark_paid_' . $booking_id, 'lm_nonce' );
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'lm_bookings';
+
+		$booking = $this->bookings->get( $booking_id );
+		if ( ! $booking || 'pending' !== ( $booking->payment_status ?? '' ) ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=lets-meet' ) );
+			exit;
+		}
+
+		$amount = number_format( (float) ( $_POST['amount'] ?? 0 ), 2, '.', '' );
+		$txn_id = sanitize_text_field( $_POST['txn_id'] ?? '' );
+
+		$wpdb->update(
+			$table,
+			[
+				'status'         => 'confirmed',
+				'payment_status' => 'paid',
+				'payment_amount' => $amount,
+				'payment_txn_id' => $txn_id ?: 'manual',
+				'payment_date'   => current_time( 'mysql', true ),
+			],
+			[ 'id' => $booking_id ],
+			[ '%s', '%s', '%f', '%s', '%s' ],
+			[ '%d' ]
+		);
+
+		// Push GCal event and fire emails (same as IPN confirmation).
+		$services = new Lets_Meet_Services();
+		$service  = $services->get( $booking->service_id );
+
+		$gcal = new Lets_Meet_Gcal();
+		$gcal_event_id = $gcal->push_event( [
+			'booking_id'   => $booking_id,
+			'start_utc'    => $booking->start_utc,
+			'duration'     => $booking->duration,
+			'client_name'  => $booking->client_name,
+			'client_email' => $booking->client_email,
+			'client_phone' => $booking->client_phone,
+			'client_notes' => $booking->client_notes,
+			'service_name' => $service ? $service->name : '',
+		] );
+
+		if ( $gcal_event_id ) {
+			$wpdb->update( $table, [ 'gcal_event_id' => $gcal_event_id ], [ 'id' => $booking_id ], [ '%s' ], [ '%d' ] );
+		}
+
+		try {
+			$tz = new \DateTimeZone( $booking->site_timezone ?: wp_timezone_string() );
+		} catch ( \Exception $e ) {
+			$tz = wp_timezone();
+		}
+		$start = new \DateTimeImmutable( $booking->start_utc, new \DateTimeZone( 'UTC' ) );
+		$local = $start->setTimezone( $tz );
+
+		$booking_data = [
+			'booking_id'     => $booking_id,
+			'service_id'     => $booking->service_id,
+			'service_name'   => $service ? $service->name : '',
+			'client_name'    => $booking->client_name,
+			'client_email'   => $booking->client_email,
+			'client_phone'   => $booking->client_phone,
+			'client_notes'   => $booking->client_notes,
+			'start_utc'      => $booking->start_utc,
+			'duration'       => $booking->duration,
+			'site_timezone'  => $booking->site_timezone,
+			'cancel_token'   => $booking->cancel_token,
+			'date_display'   => wp_date( 'l, F j, Y', $local->getTimestamp() ),
+			'time_display'   => wp_date( 'g:i A', $local->getTimestamp() ),
+			'payment_status' => 'paid',
+			'payment_amount' => $amount,
+			'payment_txn_id' => $txn_id ?: 'manual',
+		];
+
+		do_action( 'lm_booking_created', $booking_id, $booking_data );
+
+		wp_safe_redirect( add_query_arg( [
+			'page'            => 'lets-meet',
+			'action'          => 'view',
+			'booking_id'      => $booking_id,
+			'payment_updated' => '1',
+		], admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Handle admin marking a booking as waived (no payment taken).
+	 */
+	public function handle_mark_waived() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized', 'lets-meet' ) );
+		}
+
+		$booking_id = absint( $_POST['booking_id'] ?? 0 );
+		check_admin_referer( 'lm_mark_waived_' . $booking_id, 'lm_nonce' );
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'lm_bookings';
+
+		$booking = $this->bookings->get( $booking_id );
+		if ( ! $booking || 'pending' !== ( $booking->payment_status ?? '' ) ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=lets-meet' ) );
+			exit;
+		}
+
+		$wpdb->update(
+			$table,
+			[
+				'status'         => 'confirmed',
+				'payment_status' => 'waived',
+			],
+			[ 'id' => $booking_id ],
+			[ '%s', '%s' ],
+			[ '%d' ]
+		);
+
+		// Push GCal event and fire emails.
+		$services = new Lets_Meet_Services();
+		$service  = $services->get( $booking->service_id );
+
+		$gcal = new Lets_Meet_Gcal();
+		$gcal_event_id = $gcal->push_event( [
+			'booking_id'   => $booking_id,
+			'start_utc'    => $booking->start_utc,
+			'duration'     => $booking->duration,
+			'client_name'  => $booking->client_name,
+			'client_email' => $booking->client_email,
+			'client_phone' => $booking->client_phone,
+			'client_notes' => $booking->client_notes,
+			'service_name' => $service ? $service->name : '',
+		] );
+
+		if ( $gcal_event_id ) {
+			$wpdb->update( $table, [ 'gcal_event_id' => $gcal_event_id ], [ 'id' => $booking_id ], [ '%s' ], [ '%d' ] );
+		}
+
+		try {
+			$tz = new \DateTimeZone( $booking->site_timezone ?: wp_timezone_string() );
+		} catch ( \Exception $e ) {
+			$tz = wp_timezone();
+		}
+		$start = new \DateTimeImmutable( $booking->start_utc, new \DateTimeZone( 'UTC' ) );
+		$local = $start->setTimezone( $tz );
+
+		$booking_data = [
+			'booking_id'    => $booking_id,
+			'service_id'    => $booking->service_id,
+			'service_name'  => $service ? $service->name : '',
+			'client_name'   => $booking->client_name,
+			'client_email'  => $booking->client_email,
+			'client_phone'  => $booking->client_phone,
+			'client_notes'  => $booking->client_notes,
+			'start_utc'     => $booking->start_utc,
+			'duration'      => $booking->duration,
+			'site_timezone' => $booking->site_timezone,
+			'cancel_token'  => $booking->cancel_token,
+			'date_display'  => wp_date( 'l, F j, Y', $local->getTimestamp() ),
+			'time_display'  => wp_date( 'g:i A', $local->getTimestamp() ),
+		];
+
+		do_action( 'lm_booking_created', $booking_id, $booking_data );
+
+		wp_safe_redirect( add_query_arg( [
+			'page'            => 'lets-meet',
+			'action'          => 'view',
+			'booking_id'      => $booking_id,
+			'payment_updated' => '1',
+		], admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
 	/* ── Settings page ─────────────────────────────────────────────── */
 
 	/**
@@ -526,6 +808,7 @@ class Lets_Meet_Admin {
 		$tabs = [
 			'availability' => __( 'Availability', 'lets-meet' ),
 			'gcal'         => __( 'Google Calendar', 'lets-meet' ),
+			'zoom'         => __( 'Zoom', 'lets-meet' ),
 			'email'        => __( 'Email', 'lets-meet' ),
 			'general'      => __( 'General', 'lets-meet' ),
 		];
@@ -570,6 +853,9 @@ class Lets_Meet_Admin {
 						break;
 					case 'gcal':
 						$this->render_tab_gcal();
+						break;
+					case 'zoom':
+						$this->render_tab_zoom();
 						break;
 					case 'email':
 						$this->render_tab_email();
@@ -635,6 +921,58 @@ class Lets_Meet_Admin {
 		$this->gcal->disconnect();
 
 		wp_safe_redirect( admin_url( 'admin.php?page=lets-meet-settings&tab=gcal&gcal_disconnected=1' ) );
+		exit;
+	}
+
+	/**
+	 * Handle saving Zoom credentials.
+	 */
+	public function handle_save_zoom_settings() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized', 'lets-meet' ) );
+		}
+
+		check_admin_referer( 'lm_save_zoom_settings', 'lm_nonce' );
+
+		$account_id    = sanitize_text_field( $_POST['lm_zoom_account_id'] ?? '' );
+		$client_id     = sanitize_text_field( $_POST['lm_zoom_client_id'] ?? '' );
+		$client_secret = sanitize_text_field( $_POST['lm_zoom_client_secret'] ?? '' );
+
+		// If secret is empty and we already have one saved, keep it (only update account_id and client_id).
+		if ( '' === $client_secret && $this->zoom && $this->zoom->is_connected() ) {
+			if ( false === get_option( 'lm_zoom_account_id' ) ) {
+				add_option( 'lm_zoom_account_id', $account_id, '', 'no' );
+			} else {
+				update_option( 'lm_zoom_account_id', $account_id, 'no' );
+			}
+			if ( false === get_option( 'lm_zoom_client_id' ) ) {
+				add_option( 'lm_zoom_client_id', $client_id, '', 'no' );
+			} else {
+				update_option( 'lm_zoom_client_id', $client_id, 'no' );
+			}
+		} elseif ( $this->zoom ) {
+			$this->zoom->save_credentials( $account_id, $client_id, $client_secret );
+		}
+
+		wp_safe_redirect( admin_url( 'admin.php?page=lets-meet-settings&tab=zoom&updated=1' ) );
+		exit;
+	}
+
+	/**
+	 * Handle disconnecting Zoom.
+	 */
+	public function handle_zoom_disconnect() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized', 'lets-meet' ) );
+		}
+
+		check_admin_referer( 'lm_zoom_disconnect' );
+
+		if ( $this->zoom ) {
+			$this->zoom->disconnect();
+		}
+
+		wp_safe_redirect( admin_url( 'admin.php?page=lets-meet-settings&tab=zoom&zoom_disconnected=1' ) );
 		exit;
 	}
 
@@ -946,6 +1284,131 @@ class Lets_Meet_Admin {
 	}
 
 	/**
+	 * Render the Zoom tab.
+	 */
+	private function render_tab_zoom() {
+		$is_connected = $this->zoom && $this->zoom->is_connected();
+		$account_id   = get_option( 'lm_zoom_account_id', '' );
+		$client_id    = get_option( 'lm_zoom_client_id', '' );
+
+		// Notices.
+		if ( isset( $_GET['zoom_disconnected'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Zoom disconnected.', 'lets-meet' ) . '</p></div>';
+		}
+		if ( isset( $_GET['zoom_test'] ) && $this->zoom ) {
+			check_admin_referer( 'lm_zoom_test' );
+			$test_result = $this->zoom->test_connection();
+			$notice_class = strpos( $test_result, 'Success' ) !== false ? 'notice-success' : 'notice-error';
+			echo '<div class="notice ' . esc_attr( $notice_class ) . ' is-dismissible"><p><strong>' . esc_html__( 'Zoom Test:', 'lets-meet' ) . '</strong> ' . esc_html( $test_result ) . '</p></div>';
+		}
+		?>
+		<h2><?php esc_html_e( 'Zoom Meetings', 'lets-meet' ); ?></h2>
+		<p class="description">
+			<?php esc_html_e( 'Auto-create Zoom meetings for virtual sessions. Follow the setup steps below, then enter your credentials.', 'lets-meet' ); ?>
+		</p>
+
+		<details style="margin: 16px 0 24px; padding: 16px 20px; background: #f0f6fc; border-radius: 6px; max-width: 700px;">
+			<summary style="cursor: pointer; font-weight: 600; font-size: 14px; color: #1e1e1e;">
+				<?php esc_html_e( 'Zoom Setup Instructions', 'lets-meet' ); ?>
+			</summary>
+			<ol style="margin: 12px 0 0; padding-left: 20px; font-size: 13px; color: #333; line-height: 1.8;">
+				<li><?php echo wp_kses_post( __( 'Go to <a href="https://marketplace.zoom.us/" target="_blank">marketplace.zoom.us</a> and sign in with your Zoom account.', 'lets-meet' ) ); ?></li>
+				<li><?php esc_html_e( 'Click Develop > Build App.', 'lets-meet' ); ?></li>
+				<li><?php echo wp_kses_post( __( 'Choose <strong>Server-to-Server OAuth</strong> as the app type. (Do not choose "OAuth" — that is a different type.)', 'lets-meet' ) ); ?></li>
+				<li><?php esc_html_e( 'Give your app a name (e.g. "My Booking Plugin") and create it.', 'lets-meet' ); ?></li>
+				<li><?php echo wp_kses_post( __( 'On the <strong>App Credentials</strong> tab, copy the <strong>Account ID</strong>, <strong>Client ID</strong>, and <strong>Client Secret</strong>.', 'lets-meet' ) ); ?></li>
+				<li><?php echo wp_kses_post( __( 'Go to the <strong>Scopes</strong> tab and add these scopes:', 'lets-meet' ) ); ?>
+					<ul style="margin: 4px 0; padding-left: 16px; list-style: disc;">
+						<li><code>meeting:write:meeting:admin</code> — <?php esc_html_e( 'Create a meeting', 'lets-meet' ); ?></li>
+						<li><code>meeting:update:meeting:admin</code> — <?php esc_html_e( 'Update a meeting (for reschedule)', 'lets-meet' ); ?></li>
+						<li><code>meeting:delete:meeting:admin</code> — <?php esc_html_e( 'Delete a meeting (for cancellation)', 'lets-meet' ); ?></li>
+					</ul>
+				</li>
+				<li><?php echo wp_kses_post( __( 'Click <strong>Activate</strong> to activate the app.', 'lets-meet' ) ); ?></li>
+				<li><?php esc_html_e( 'Paste your Account ID, Client ID, and Client Secret below and save.', 'lets-meet' ); ?></li>
+				<li><?php esc_html_e( 'Use the "Test Connection" button to verify everything works.', 'lets-meet' ); ?></li>
+				<li><?php esc_html_e( 'Finally, enable Zoom on each service under Services > Edit.', 'lets-meet' ); ?></li>
+			</ol>
+		</details>
+
+		<?php if ( $is_connected ) : ?>
+			<div class="lm-gcal-status lm-gcal-status--connected">
+				<span class="dashicons dashicons-yes-alt"></span>
+				<?php esc_html_e( 'Connected', 'lets-meet' ); ?>
+			</div>
+		<?php else : ?>
+			<div class="lm-gcal-status lm-gcal-status--disconnected">
+				<span class="dashicons dashicons-warning"></span>
+				<?php esc_html_e( 'Not connected', 'lets-meet' ); ?>
+			</div>
+		<?php endif; ?>
+
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="lm_save_zoom_settings">
+			<?php wp_nonce_field( 'lm_save_zoom_settings', 'lm_nonce' ); ?>
+
+			<table class="form-table">
+				<tr>
+					<th scope="row">
+						<label for="lm-zoom-account-id"><?php esc_html_e( 'Account ID', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="text" id="lm-zoom-account-id" name="lm_zoom_account_id"
+							value="<?php echo esc_attr( $account_id ); ?>"
+							class="regular-text">
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<label for="lm-zoom-client-id"><?php esc_html_e( 'Client ID', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="text" id="lm-zoom-client-id" name="lm_zoom_client_id"
+							value="<?php echo esc_attr( $client_id ); ?>"
+							class="regular-text">
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<label for="lm-zoom-client-secret"><?php esc_html_e( 'Client Secret', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="password" id="lm-zoom-client-secret" name="lm_zoom_client_secret"
+							value="" class="regular-text" autocomplete="new-password">
+						<p class="description">
+							<?php
+							if ( $is_connected ) {
+								esc_html_e( 'Leave blank to keep the current secret.', 'lets-meet' );
+							} else {
+								esc_html_e( 'Enter your Zoom Server-to-Server OAuth Client Secret.', 'lets-meet' );
+							}
+							?>
+						</p>
+					</td>
+				</tr>
+			</table>
+
+			<?php submit_button( __( 'Save Credentials', 'lets-meet' ) ); ?>
+		</form>
+
+		<?php if ( $is_connected ) : ?>
+			<hr>
+			<p><?php esc_html_e( 'Zoom is connected. Enable Zoom per-service in the service editor.', 'lets-meet' ); ?></p>
+			<p>
+				<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?page=lets-meet-settings&tab=zoom&zoom_test=1' ), 'lm_zoom_test' ) ); ?>"
+					class="button button-primary">
+					<?php esc_html_e( 'Test Connection', 'lets-meet' ); ?>
+				</a>
+				&nbsp;
+				<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=lm_zoom_disconnect' ), 'lm_zoom_disconnect' ) ); ?>"
+					class="button" onclick="return confirm('<?php echo esc_js( __( 'Disconnect Zoom?', 'lets-meet' ) ); ?>');">
+					<?php esc_html_e( 'Disconnect', 'lets-meet' ); ?>
+				</a>
+			</p>
+		<?php endif;
+	}
+
+	/**
 	 * Render the Email tab.
 	 */
 	private function render_tab_email() {
@@ -1010,6 +1473,34 @@ class Lets_Meet_Admin {
 			<input type="hidden" name="lm_tab" value="general">
 			<?php wp_nonce_field( 'lm_save_settings', 'lm_nonce' ); ?>
 
+			<h3><?php esc_html_e( 'PayPal Payment', 'lets-meet' ); ?></h3>
+			<table class="form-table">
+				<tr>
+					<th scope="row">
+						<label for="lm-paypal-email"><?php esc_html_e( 'PayPal Email', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="email" id="lm-paypal-email" name="lm_paypal_email"
+							value="<?php echo esc_attr( $settings['paypal_email'] ?? '' ); ?>"
+							class="regular-text">
+						<p class="description">
+							<?php esc_html_e( 'Your PayPal business email. Required for paid services.', 'lets-meet' ); ?>
+						</p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Sandbox Mode', 'lets-meet' ); ?></th>
+					<td>
+						<label for="lm-paypal-sandbox">
+							<input type="checkbox" id="lm-paypal-sandbox" name="lm_paypal_sandbox" value="1"
+								<?php checked( ! empty( $settings['paypal_sandbox'] ) ); ?>>
+							<?php esc_html_e( 'Enable PayPal Sandbox for testing (use sandbox.paypal.com).', 'lets-meet' ); ?>
+						</label>
+					</td>
+				</tr>
+			</table>
+
+			<h3><?php esc_html_e( 'Other', 'lets-meet' ); ?></h3>
 			<table class="form-table">
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Uninstall Behavior', 'lets-meet' ); ?></th>
@@ -1166,7 +1657,9 @@ class Lets_Meet_Admin {
 	private function save_tab_general() {
 		$settings = get_option( 'lm_settings', [] );
 
-		$settings['keep_data'] = ! empty( $_POST['lm_keep_data'] );
+		$settings['keep_data']       = ! empty( $_POST['lm_keep_data'] );
+		$settings['paypal_email']    = sanitize_email( $_POST['lm_paypal_email'] ?? '' );
+		$settings['paypal_sandbox']  = ! empty( $_POST['lm_paypal_sandbox'] );
 
 		update_option( 'lm_settings', $settings );
 	}
@@ -1319,6 +1812,7 @@ class Lets_Meet_Admin {
 						<th scope="col"><?php esc_html_e( 'Name', 'lets-meet' ); ?></th>
 						<th scope="col"><?php esc_html_e( 'Slug', 'lets-meet' ); ?></th>
 						<th scope="col"><?php esc_html_e( 'Duration', 'lets-meet' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Price', 'lets-meet' ); ?></th>
 						<th scope="col"><?php esc_html_e( 'Status', 'lets-meet' ); ?></th>
 						<th scope="col"><?php esc_html_e( 'Actions', 'lets-meet' ); ?></th>
 					</tr>
@@ -1340,6 +1834,12 @@ class Lets_Meet_Admin {
 									esc_html__( '%d min', 'lets-meet' ),
 									absint( $service->duration )
 								);
+								?>
+							</td>
+							<td>
+								<?php
+								$svc_price = (float) ( $service->price ?? 0 );
+								echo $svc_price > 0 ? '$' . esc_html( number_format( $svc_price, 2 ) ) : esc_html__( 'Free', 'lets-meet' );
 								?>
 							</td>
 							<td>
@@ -1408,10 +1908,12 @@ class Lets_Meet_Admin {
 			echo '<div class="notice notice-error"><p>' . esc_html( $error ) . '</p></div>';
 		}
 
-		$name        = $service->name ?? '';
-		$duration    = $service->duration ?? 60;
-		$description = $service->description ?? '';
-		$service_id  = $service->id ?? 0;
+		$name         = $service->name ?? '';
+		$duration     = $service->duration ?? 60;
+		$description  = $service->description ?? '';
+		$price        = $service->price ?? '0.00';
+		$zoom_enabled = $service->zoom_enabled ?? 0;
+		$service_id   = $service->id ?? 0;
 		$back_url    = admin_url( 'admin.php?page=lets-meet-services' );
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -1467,12 +1969,37 @@ class Lets_Meet_Admin {
 				</tr>
 				<tr>
 					<th scope="row">
+						<label for="lm-price"><?php esc_html_e( 'Price ($)', 'lets-meet' ); ?></label>
+					</th>
+					<td>
+						<input type="number" id="lm-price" name="price" value="<?php echo esc_attr( $price ); ?>"
+							class="small-text" min="0" step="0.01">
+						<p class="description"><?php esc_html_e( 'Set to 0.00 for free services. Any positive amount requires PayPal payment.', 'lets-meet' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
 						<label for="lm-description"><?php esc_html_e( 'Description', 'lets-meet' ); ?></label>
 					</th>
 					<td>
 						<textarea id="lm-description" name="description" rows="4"
 							class="large-text"><?php echo esc_textarea( $description ); ?></textarea>
 						<p class="description"><?php esc_html_e( 'Optional. Shown to visitors on the booking page.', 'lets-meet' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Zoom Meeting', 'lets-meet' ); ?></th>
+					<td>
+						<label for="lm-zoom-enabled">
+							<input type="checkbox" id="lm-zoom-enabled" name="zoom_enabled" value="1"
+								<?php checked( $zoom_enabled ); ?>>
+							<?php esc_html_e( 'Auto-create a Zoom meeting for this service', 'lets-meet' ); ?>
+						</label>
+						<?php if ( ! $this->zoom || ! $this->zoom->is_connected() ) : ?>
+							<p class="description" style="color: #b32d2e;">
+								<?php esc_html_e( 'Zoom is not connected. Connect Zoom in Settings > Zoom to use this feature.', 'lets-meet' ); ?>
+							</p>
+						<?php endif; ?>
 					</td>
 				</tr>
 			</table>

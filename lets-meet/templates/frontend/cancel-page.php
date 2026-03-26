@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 get_header();
 ?>
 
-<div class="lm-client-page" style="max-width: 520px; margin: 40px auto; padding: 0 20px;">
+<div class="lm-client-page" style="max-width: 520px; margin: 275px auto 100px; padding: 0 20px;">
 <?php if ( ! empty( $confirmed ) ) : ?>
 
 	<div style="text-align: center; padding: 40px 0;">

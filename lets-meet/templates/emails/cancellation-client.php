@@ -77,7 +77,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 							</table>
 
 							<p style="margin: 0; font-size: 14px; color: #888888;">
-								<?php esc_html_e( 'If you would like to book a new session, please visit our booking page.', 'lets-meet' ); ?>
+								<?php
+								printf(
+									/* translators: %s: link to site home page */
+									wp_kses_post( __( 'If you would like to book a new session, please <a href="%s" style="color: #0073aa;">visit our booking page</a>.', 'lets-meet' ) ),
+									esc_url( home_url( '/meet/' ) )
+								);
+								?>
 							</p>
 						</td>
 					</tr>

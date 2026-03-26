@@ -29,6 +29,9 @@ if ( empty( $settings['keep_data'] ) ) {
 		'lm_gcal_client_secret',
 		'lm_gcal_tokens',
 		'lm_gcal_calendar_id',
+		'lm_zoom_account_id',
+		'lm_zoom_client_id',
+		'lm_zoom_client_secret',
 	];
 	foreach ( $option_keys as $key ) {
 		delete_option( $key );
@@ -36,6 +39,8 @@ if ( empty( $settings['keep_data'] ) ) {
 
 	// Delete plugin transients.
 	delete_transient( 'lm_gcal_error' );
+	delete_transient( 'lm_zoom_token' );
+	delete_transient( 'lm_zoom_error' );
 
 	// Delete per-date FreeBusy cache transients.
 	$wpdb->query(

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Let's Meet
  * Description: A lightweight 1:1 booking plugin for service providers.
- * Version:     1.1.0
+ * Version:     1.2.1
  * Author:      Lingua Ink Media
  * Author URI:  https://linguainkmedia.com
  * License:     GPL-2.0-or-later
@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'LM_VERSION', '1.1.0' );
-define( 'LM_DB_VERSION', '1.1.0' );
+define( 'LM_VERSION', '1.2.1' );
+define( 'LM_DB_VERSION', '1.2.1' );
 define( 'LM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'LM_URL', plugin_dir_url( __FILE__ ) );
 define( 'LM_BASENAME', plugin_basename( __FILE__ ) );
@@ -44,6 +44,8 @@ require_once LM_PATH . 'includes/class-lets-meet-email.php';
 require_once LM_PATH . 'includes/class-lets-meet-admin.php';
 require_once LM_PATH . 'includes/class-lets-meet-public.php';
 require_once LM_PATH . 'includes/class-lets-meet-privacy.php';
+require_once LM_PATH . 'includes/class-lets-meet-paypal.php';
+require_once LM_PATH . 'includes/class-lets-meet-zoom.php';
 require_once LM_PATH . 'includes/class-lets-meet-loader.php';
 
 /* ── Activation ───────────────────────────────────────────────────── */
@@ -56,6 +58,11 @@ register_activation_hook( __FILE__, function () {
 	if ( ! wp_next_scheduled( 'lm_prewarm_gcal' ) ) {
 		wp_schedule_event( current_datetime()->getTimestamp(), 'daily', 'lm_prewarm_gcal' );
 	}
+
+	// Register PayPal IPN rewrite rule then flush.
+	$paypal = new Lets_Meet_Paypal();
+	$paypal->register_ipn_endpoint();
+	flush_rewrite_rules();
 
 	// Seed default settings if they don't exist yet.
 	if ( false === get_option( 'lm_settings' ) ) {
@@ -91,6 +98,7 @@ register_deactivation_hook( __FILE__, function () {
 	if ( $timestamp ) {
 		wp_unschedule_event( $timestamp, 'lm_prewarm_gcal' );
 	}
+	flush_rewrite_rules();
 } );
 
 /* ── Bootstrap ────────────────────────────────────────────────────── */

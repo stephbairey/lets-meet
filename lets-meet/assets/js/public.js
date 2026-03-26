@@ -397,6 +397,12 @@
 					return;
 				}
 
+				// Paid booking: redirect to PayPal.
+				if (response.data && response.data.redirect) {
+					window.location.href = response.data.redirect;
+					return;
+				}
+
 				showSuccess(response.data);
 			})
 			.catch(function () {

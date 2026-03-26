@@ -104,6 +104,13 @@ class Lets_Meet_Public {
 	 * Hooked to template_redirect.
 	 */
 	public function handle_client_action() {
+		// Handle PayPal return pages.
+		$payment_action = sanitize_text_field( $_GET['lm_payment'] ?? '' );
+		if ( '' !== $payment_action ) {
+			$this->handle_payment_return( $payment_action );
+			return;
+		}
+
 		$action = sanitize_text_field( $_GET['lm_action'] ?? '' );
 		$token  = sanitize_text_field( $_GET['lm_token'] ?? '' );
 
@@ -204,6 +211,51 @@ class Lets_Meet_Public {
 			include LM_PATH . 'templates/frontend/reschedule-page.php';
 			exit;
 		}
+	}
+
+	/**
+	 * Handle PayPal return/cancel pages.
+	 *
+	 * @param string $action 'success' or 'cancelled'.
+	 */
+	private function handle_payment_return( $action ) {
+		$booking_id = absint( $_GET['booking'] ?? 0 );
+
+		get_header();
+		echo '<div style="max-width: 520px; margin: 60px auto; text-align: center; padding: 0 20px;">';
+
+		if ( 'success' === $action ) {
+			echo '<h2>' . esc_html__( 'Thank You!', 'lets-meet' ) . '</h2>';
+			echo '<p>' . esc_html__( 'Payment received! You\'ll get a confirmation email shortly.', 'lets-meet' ) . '</p>';
+		} elseif ( 'cancelled' === $action ) {
+			echo '<h2>' . esc_html__( 'Payment Cancelled', 'lets-meet' ) . '</h2>';
+			echo '<p>' . esc_html__( 'Your payment was cancelled. Your booking is being held.', 'lets-meet' ) . '</p>';
+
+			if ( $booking_id ) {
+				$booking = $this->bookings->get( $booking_id );
+				if ( $booking && 'pending_payment' === $booking->status ) {
+					$service = $this->services->get( $booking->service_id );
+					if ( $service ) {
+						$paypal = new Lets_Meet_Paypal();
+						$retry_url = $paypal->get_redirect_url( $booking_id, $service->name, $service->price );
+						echo '<p><a href="' . esc_url( $retry_url ) . '" style="display:inline-block; background-color:#0073aa; color:#fff; text-decoration:none; padding:10px 24px; border-radius:4px; font-weight:600;">'
+							. esc_html__( 'Complete Payment', 'lets-meet' ) . '</a></p>';
+					}
+				}
+			}
+
+			$settings     = get_option( 'lm_settings', [] );
+			$contact_email = $settings['admin_email'] ?? get_option( 'admin_email' );
+			echo '<p>' . sprintf(
+				/* translators: %s: admin email */
+				esc_html__( 'To complete your booking, click the button above or contact us at %s.', 'lets-meet' ),
+				'<a href="mailto:' . esc_attr( $contact_email ) . '">' . esc_html( $contact_email ) . '</a>'
+			) . '</p>';
+		}
+
+		echo '</div>';
+		get_footer();
+		exit;
 	}
 
 	/**
@@ -407,6 +459,14 @@ class Lets_Meet_Public {
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+			return;
+		}
+
+		// Paid booking: redirect to PayPal.
+		if ( ! empty( $result['paypal_redirect_url'] ) ) {
+			wp_send_json_success( [
+				'redirect' => $result['paypal_redirect_url'],
+			] );
 			return;
 		}
 

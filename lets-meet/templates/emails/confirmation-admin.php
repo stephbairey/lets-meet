@@ -75,6 +75,47 @@ if ( ! defined( 'ABSPATH' ) ) {
 								</tr>
 							</table>
 
+							<?php if ( ! empty( $args['zoom_join_url'] ) ) : ?>
+							<!-- Zoom meeting link -->
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 4px; margin-bottom: 24px;">
+								<tr>
+									<td style="padding: 16px 20px;">
+										<p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #1565c0;">
+											<?php esc_html_e( 'Zoom Meeting', 'lets-meet' ); ?>
+										</p>
+										<p style="margin: 0; font-size: 14px;">
+											<a href="<?php echo esc_url( $args['zoom_join_url'] ); ?>" style="color: #1565c0;">
+												<?php echo esc_html( $args['zoom_join_url'] ); ?>
+											</a>
+										</p>
+									</td>
+								</tr>
+							</table>
+							<?php endif; ?>
+
+							<?php if ( ! empty( $args['payment_status'] ) && 'paid' === $args['payment_status'] ) : ?>
+							<!-- Payment info box -->
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #e8f5e9; border-radius: 6px; margin-bottom: 24px;">
+								<tr>
+									<td style="padding: 20px 24px;">
+										<p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #2e7d32;">
+											<?php esc_html_e( 'Payment Received', 'lets-meet' ); ?>
+										</p>
+										<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+											<tr>
+												<td style="padding: 4px 0; font-size: 14px; color: #646970; width: 120px;"><?php esc_html_e( 'Amount', 'lets-meet' ); ?></td>
+												<td style="padding: 4px 0; font-size: 14px; color: #1e1e1e;">$<?php echo esc_html( number_format( (float) ( $args['payment_amount'] ?? 0 ), 2 ) ); ?></td>
+											</tr>
+											<tr>
+												<td style="padding: 4px 0; font-size: 14px; color: #646970;"><?php esc_html_e( 'Transaction ID', 'lets-meet' ); ?></td>
+												<td style="padding: 4px 0; font-size: 14px; color: #1e1e1e;"><?php echo esc_html( $args['payment_txn_id'] ?? '' ); ?></td>
+											</tr>
+										</table>
+									</td>
+								</tr>
+							</table>
+							<?php endif; ?>
+
 							<!-- Client details box -->
 							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #fef9f0; border-radius: 6px; margin-bottom: 24px;">
 								<tr>

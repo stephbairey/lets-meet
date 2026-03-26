@@ -74,6 +74,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 								</tr>
 							</table>
 
+							<?php if ( ! empty( $args['zoom_join_url'] ) ) : ?>
+							<!-- Zoom meeting link -->
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 4px; margin-bottom: 24px;">
+								<tr>
+									<td style="padding: 16px 20px;">
+										<p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #1565c0;">
+											<?php esc_html_e( 'Zoom Meeting', 'lets-meet' ); ?>
+										</p>
+										<p style="margin: 0; font-size: 14px;">
+											<a href="<?php echo esc_url( $args['zoom_join_url'] ); ?>" style="color: #1565c0;">
+												<?php echo esc_html( $args['zoom_join_url'] ); ?>
+											</a>
+										</p>
+									</td>
+								</tr>
+							</table>
+							<?php endif; ?>
+
 							<!-- Client details -->
 							<h3 style="margin: 0 0 12px; font-size: 14px; color: #333333;"><?php esc_html_e( 'Client Details', 'lets-meet' ); ?></h3>
 							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">

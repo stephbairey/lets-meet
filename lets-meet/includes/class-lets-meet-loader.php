@@ -22,11 +22,12 @@ class Lets_Meet_Loader {
 		// Core classes.
 		$services     = new Lets_Meet_Services();
 		$gcal         = new Lets_Meet_Gcal();
+		$zoom         = new Lets_Meet_Zoom();
 		$availability = new Lets_Meet_Availability( $services, $gcal );
-		$bookings     = new Lets_Meet_Bookings( $services, $availability, $gcal );
+		$bookings     = new Lets_Meet_Bookings( $services, $availability, $gcal, $zoom );
 
 		// Admin: menu, assets, form handlers.
-		$admin = new Lets_Meet_Admin( $services, $gcal, $bookings );
+		$admin = new Lets_Meet_Admin( $services, $gcal, $bookings, $zoom );
 
 		add_action( 'admin_init', [ $admin, 'handle_early_actions' ] );
 		add_action( 'admin_menu', [ $admin, 'register_menu' ] );
@@ -34,6 +35,8 @@ class Lets_Meet_Loader {
 		add_action( 'admin_post_lm_save_service', [ $admin, 'handle_save_service' ] );
 		add_action( 'admin_post_lm_save_settings', [ $admin, 'handle_save_settings' ] );
 		add_action( 'admin_post_lm_admin_reschedule', [ $admin, 'handle_admin_reschedule' ] );
+		add_action( 'admin_post_lm_mark_paid', [ $admin, 'handle_mark_paid' ] );
+		add_action( 'admin_post_lm_mark_waived', [ $admin, 'handle_mark_waived' ] );
 
 		// Google Calendar: OAuth callback, credentials, admin notice, prewarm cron.
 		add_action( 'admin_post_lm_gcal_callback', [ $gcal, 'handle_oauth_callback' ] );
@@ -41,6 +44,17 @@ class Lets_Meet_Loader {
 		add_action( 'admin_post_lm_gcal_disconnect', [ $admin, 'handle_gcal_disconnect' ] );
 		add_action( 'admin_notices', [ $gcal, 'maybe_show_admin_notice' ] );
 		add_action( 'lm_prewarm_gcal', [ $gcal, 'prewarm_cache' ] );
+
+		// Zoom: settings, disconnect, admin notice.
+		add_action( 'admin_post_lm_save_zoom_settings', [ $admin, 'handle_save_zoom_settings' ] );
+		add_action( 'admin_post_lm_zoom_disconnect', [ $admin, 'handle_zoom_disconnect' ] );
+		add_action( 'admin_notices', [ $zoom, 'maybe_show_admin_notice' ] );
+
+		// PayPal IPN endpoint.
+		$paypal = new Lets_Meet_Paypal();
+		add_action( 'init', [ $paypal, 'register_ipn_endpoint' ] );
+		add_filter( 'query_vars', [ $paypal, 'register_query_vars' ] );
+		add_action( 'template_redirect', [ $paypal, 'maybe_handle_ipn' ] );
 
 		// Frontend: shortcode, assets, AJAX.
 		$public = new Lets_Meet_Public( $services, $availability, $bookings );

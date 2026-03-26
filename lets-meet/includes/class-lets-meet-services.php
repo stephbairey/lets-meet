@@ -83,10 +83,12 @@ class Lets_Meet_Services {
 				'name'        => $data['name'],
 				'slug'        => $slug,
 				'duration'    => $data['duration'],
-				'description' => $data['description'] ?? '',
-				'is_active'   => 1,
+				'description'  => $data['description'] ?? '',
+				'price'        => $data['price'] ?? '0.00',
+				'zoom_enabled' => ! empty( $data['zoom_enabled'] ) ? 1 : 0,
+				'is_active'    => 1,
 			],
-			[ '%s', '%s', '%d', '%s', '%d' ]
+			[ '%s', '%s', '%d', '%s', '%f', '%d', '%d' ]
 		);
 
 		return $result ? $wpdb->insert_id : false;
@@ -123,6 +125,16 @@ class Lets_Meet_Services {
 		if ( array_key_exists( 'description', $data ) ) {
 			$fields['description'] = $data['description'];
 			$formats[]             = '%s';
+		}
+
+		if ( isset( $data['price'] ) ) {
+			$fields['price'] = $data['price'];
+			$formats[]       = '%f';
+		}
+
+		if ( array_key_exists( 'zoom_enabled', $data ) ) {
+			$fields['zoom_enabled'] = ! empty( $data['zoom_enabled'] ) ? 1 : 0;
+			$formats[]              = '%d';
 		}
 
 		if ( empty( $fields ) ) {
@@ -190,16 +202,27 @@ class Lets_Meet_Services {
 		}
 
 		// Description: optional, allows safe HTML (links, bold, etc.).
-		$description = wp_kses_post( $data['description'] ?? '' );
+		$description = wp_kses_post( wp_unslash( $data['description'] ?? '' ) );
+
+		// Price: numeric, >= 0, max 2 decimal places.
+		$price = $data['price'] ?? '0.00';
+		if ( ! is_numeric( $price ) || (float) $price < 0 ) {
+			$errors[] = __( 'Price must be a positive number.', 'lets-meet' );
+			$price = '0.00';
+		} else {
+			$price = number_format( (float) $price, 2, '.', '' );
+		}
 
 		if ( ! empty( $errors ) ) {
 			return new WP_Error( 'lm_validation', implode( ' ', $errors ) );
 		}
 
 		return [
-			'name'        => $name,
-			'duration'    => $duration,
-			'description' => $description,
+			'name'         => $name,
+			'duration'     => $duration,
+			'description'  => $description,
+			'price'        => $price,
+			'zoom_enabled' => ! empty( $data['zoom_enabled'] ) ? 1 : 0,
 		];
 	}
 

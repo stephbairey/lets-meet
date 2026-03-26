@@ -32,6 +32,7 @@ class Lets_Meet_Bookings_Table extends WP_List_Table {
 			'client_name' => __( 'Client', 'lets-meet' ),
 			'client_email' => __( 'Email', 'lets-meet' ),
 			'service'     => __( 'Service', 'lets-meet' ),
+			'payment'     => __( 'Payment', 'lets-meet' ),
 			'status'      => __( 'Status', 'lets-meet' ),
 		];
 	}
@@ -117,14 +118,38 @@ class Lets_Meet_Bookings_Table extends WP_List_Table {
 		return esc_html( $item->service_name ?? __( '(deleted)', 'lets-meet' ) );
 	}
 
+	public function column_payment( $item ) {
+		$ps = $item->payment_status ?? 'none';
+		$map = [
+			'none'    => [ __( 'Free', 'lets-meet' ),    'lm-payment-none' ],
+			'pending' => [ __( 'Pending', 'lets-meet' ), 'lm-payment-pending' ],
+			'paid'    => [ __( 'Paid', 'lets-meet' ),    'lm-payment-paid' ],
+			'waived'  => [ __( 'Waived', 'lets-meet' ),  'lm-payment-waived' ],
+		];
+
+		$info  = $map[ $ps ] ?? [ $ps, '' ];
+
+		return sprintf(
+			'<span class="lm-status %s">%s</span>',
+			esc_attr( $info[1] ),
+			esc_html( $info[0] )
+		);
+	}
+
 	public function column_status( $item ) {
 		$labels = [
-			'confirmed' => __( 'Confirmed', 'lets-meet' ),
-			'cancelled' => __( 'Cancelled', 'lets-meet' ),
+			'confirmed'       => __( 'Confirmed', 'lets-meet' ),
+			'cancelled'       => __( 'Cancelled', 'lets-meet' ),
+			'pending_payment' => __( 'Pending Payment', 'lets-meet' ),
 		];
 
 		$label = $labels[ $item->status ] ?? $item->status;
-		$class = 'confirmed' === $item->status ? 'lm-status-confirmed' : 'lm-status-cancelled';
+		$classes = [
+			'confirmed'       => 'lm-status-confirmed',
+			'cancelled'       => 'lm-status-cancelled',
+			'pending_payment' => 'lm-status-pending-payment',
+		];
+		$class = $classes[ $item->status ] ?? '';
 
 		return sprintf(
 			'<span class="lm-status %s">%s</span>',
@@ -149,9 +174,10 @@ class Lets_Meet_Bookings_Table extends WP_List_Table {
 		$table   = $wpdb->prefix . 'lm_bookings';
 		$current = sanitize_text_field( $_GET['status'] ?? 'all' );
 
-		$total     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
-		$confirmed = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = %s", 'confirmed' ) );
-		$cancelled = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = %s", 'cancelled' ) );
+		$total           = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+		$confirmed       = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = %s", 'confirmed' ) );
+		$pending_payment = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = %s", 'pending_payment' ) );
+		$cancelled       = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = %s", 'cancelled' ) );
 
 		$base_url = admin_url( 'admin.php?page=lets-meet' );
 
@@ -171,6 +197,14 @@ class Lets_Meet_Bookings_Table extends WP_List_Table {
 			'confirmed' === $current ? 'current' : '',
 			esc_html__( 'Confirmed', 'lets-meet' ),
 			$confirmed
+		);
+
+		$views['pending_payment'] = sprintf(
+			'<a href="%s" class="%s">%s <span class="count">(%d)</span></a>',
+			esc_url( add_query_arg( 'status', 'pending_payment', $base_url ) ),
+			'pending_payment' === $current ? 'current' : '',
+			esc_html__( 'Pending Payment', 'lets-meet' ),
+			$pending_payment
 		);
 
 		$views['cancelled'] = sprintf(
@@ -199,7 +233,7 @@ class Lets_Meet_Bookings_Table extends WP_List_Table {
 		// Status filter.
 		$status = sanitize_text_field( $_GET['status'] ?? '' );
 		$where  = '';
-		if ( in_array( $status, [ 'confirmed', 'cancelled' ], true ) ) {
+		if ( in_array( $status, [ 'confirmed', 'cancelled', 'pending_payment' ], true ) ) {
 			$where = $wpdb->prepare( "WHERE b.status = %s", $status );
 		}
 

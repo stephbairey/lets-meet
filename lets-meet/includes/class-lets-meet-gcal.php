@@ -533,19 +533,25 @@ class Lets_Meet_Gcal {
 		$start   = new DateTimeImmutable( $booking_data['start_utc'], new DateTimeZone( 'UTC' ) );
 		$end     = $start->modify( '+' . absint( $booking_data['duration'] ) . ' minutes' );
 
+		$description = sprintf(
+			"Booked via Let's Meet\nService: %s\nEmail: %s\nPhone: %s\nNotes: %s",
+			$booking_data['service_name'] ?? '',
+			$booking_data['client_email'],
+			$booking_data['client_phone'] ?? '',
+			$booking_data['client_notes'] ?? ''
+		);
+
+		if ( ! empty( $booking_data['zoom_join_url'] ) ) {
+			$description .= "\n\nZoom Meeting: " . $booking_data['zoom_join_url'];
+		}
+
 		$event = [
 			'summary'     => sprintf(
 				/* translators: %s: client name */
 				__( 'Booking — %s', 'lets-meet' ),
 				$booking_data['client_name']
 			),
-			'description' => sprintf(
-				"Booked via Let's Meet\nService: %s\nEmail: %s\nPhone: %s\nNotes: %s",
-				$booking_data['service_name'] ?? '',
-				$booking_data['client_email'],
-				$booking_data['client_phone'] ?? '',
-				$booking_data['client_notes'] ?? ''
-			),
+			'description' => $description,
 			'start'     => [ 'dateTime' => $start->setTimezone( $tz )->format( 'c' ), 'timeZone' => $tz->getName() ],
 			'end'       => [ 'dateTime' => $end->setTimezone( $tz )->format( 'c' ), 'timeZone' => $tz->getName() ],
 			'reminders' => [ 'useDefault' => true ],

@@ -84,6 +84,38 @@ if ( ! defined( 'ABSPATH' ) ) {
 								</tr>
 							</table>
 
+							<?php if ( ! empty( $args['zoom_join_url'] ) ) : ?>
+							<!-- Zoom meeting link -->
+							<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 4px; margin-bottom: 24px;">
+								<tr>
+									<td style="padding: 16px 20px;">
+										<p style="margin: 0 0 10px; font-size: 14px; font-weight: 600; color: #1565c0;">
+											<?php esc_html_e( 'Zoom Meeting', 'lets-meet' ); ?>
+										</p>
+										<p style="margin: 0; text-align: center;">
+											<a href="<?php echo esc_url( $args['zoom_join_url'] ); ?>"
+												style="display: inline-block; background-color: #2196F3; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600;">
+												<?php esc_html_e( 'Join Zoom Meeting', 'lets-meet' ); ?>
+											</a>
+										</p>
+									</td>
+								</tr>
+							</table>
+							<?php endif; ?>
+
+							<?php if ( ! empty( $args['payment_status'] ) && 'paid' === $args['payment_status'] ) : ?>
+							<p style="margin: 0 0 16px; font-size: 14px; color: #2e7d32; line-height: 1.6;">
+								<?php
+								printf(
+									/* translators: 1: amount, 2: transaction ID */
+									esc_html__( 'Payment of $%1$s received. Transaction ID: %2$s', 'lets-meet' ),
+									esc_html( number_format( (float) ( $args['payment_amount'] ?? 0 ), 2 ) ),
+									esc_html( $args['payment_txn_id'] ?? '' )
+								);
+								?>
+							</p>
+							<?php endif; ?>
+
 							<?php
 							$custom_msg = $settings['confirm_msg'] ?? '';
 							if ( '' !== $custom_msg ) :

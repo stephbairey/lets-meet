@@ -155,10 +155,11 @@ class Lets_Meet_Availability {
 
 		$sql = $wpdb->prepare(
 			"SELECT start_utc, duration FROM {$table}
-			 WHERE start_utc >= %s AND start_utc < %s AND status = %s",
+			 WHERE start_utc >= %s AND start_utc < %s AND status IN (%s, %s)",
 			$day_start_utc,
 			$day_end_utc,
-			'confirmed'
+			'confirmed',
+			'pending_payment'
 		);
 
 		if ( $exclude_booking_id > 0 ) {

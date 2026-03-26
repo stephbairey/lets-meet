@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 get_header();
 ?>
 
-<div class="lm-client-page lm-reschedule-page" style="max-width: 600px; margin: 40px auto; padding: 0 20px;">
+<div class="lm-client-page lm-reschedule-page" style="max-width: 600px; margin: 275px auto 100px; padding: 0 20px;">
 
 	<h2><?php esc_html_e( 'Reschedule Your Booking', 'lets-meet' ); ?></h2>
 
