@@ -91,10 +91,13 @@ class Lets_Meet_Availability {
 		$day_end_utc   = $day_end->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
 
 		// 5a. DB bookings.
-		$busy = $this->get_busy_from_db( $day_start_utc, $day_end_utc, $tz, absint( $exclude_booking_id ) );
+		$busy_db = $this->get_busy_from_db( $day_start_utc, $day_end_utc, $tz, absint( $exclude_booking_id ) );
 
-		// 5b. Google Calendar busy times.
-		$busy = array_merge( $busy, $this->gcal->get_busy( $date, $tz ) );
+		// 5b. Google Calendar busy times (always fresh — bypasses transient cache
+		// to avoid stale data from host-level object caches like LiteSpeed/Redis).
+		$busy_gcal = $this->gcal->get_busy_fresh( $date, $tz );
+
+		$busy = array_merge( $busy_db, $busy_gcal );
 
 		// ── Step 6: Apply buffer to all busy intervals ───────────────
 		$buffer = absint( $settings['buffer'] ?? 30 );

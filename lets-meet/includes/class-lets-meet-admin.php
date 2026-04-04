@@ -1252,7 +1252,7 @@ class Lets_Meet_Admin {
 							value="<?php echo esc_attr( $calendar_id ); ?>"
 							class="regular-text">
 						<p class="description">
-							<?php esc_html_e( 'Default: primary. Use your calendar\'s email address for a specific calendar.', 'lets-meet' ); ?>
+							<?php esc_html_e( 'Default: primary. Use comma-separated email addresses to check multiple calendars (e.g. me@gmail.com,other@gmail.com).', 'lets-meet' ); ?>
 						</p>
 					</td>
 				</tr>

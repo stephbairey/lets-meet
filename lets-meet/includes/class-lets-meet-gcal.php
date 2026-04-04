@@ -403,12 +403,24 @@ class Lets_Meet_Gcal {
 
 		$day_start  = new DateTimeImmutable( $date . ' 00:00:00', $tz );
 		$day_end    = $day_start->modify( '+1 day' );
-		$cal_id     = get_option( 'lm_gcal_calendar_id', 'primary' );
+		$cal_id_raw = get_option( 'lm_gcal_calendar_id', 'primary' );
+
+		// Support comma-separated calendar IDs to check multiple calendars.
+		$cal_ids = array_map( 'trim', explode( ',', $cal_id_raw ) );
+		$cal_ids = array_filter( $cal_ids );
+		if ( empty( $cal_ids ) ) {
+			$cal_ids = [ 'primary' ];
+		}
+
+		$items = [];
+		foreach ( $cal_ids as $cid ) {
+			$items[] = [ 'id' => $cid ];
+		}
 
 		$body = wp_json_encode( [
 			'timeMin' => $day_start->format( 'c' ),
 			'timeMax' => $day_end->format( 'c' ),
-			'items'   => [ [ 'id' => $cal_id ] ],
+			'items'   => $items,
 		] );
 
 		$result = $this->api_request_with_retry(
@@ -427,20 +439,18 @@ class Lets_Meet_Gcal {
 			return [];
 		}
 
-		// Extract busy array from response.
-		// Google may key by the actual email address instead of "primary".
+		// Extract and merge busy arrays from all calendars.
 		$calendars = $result['calendars'] ?? [];
-		if ( isset( $calendars[ $cal_id ] ) ) {
-			$busy_data = $calendars[ $cal_id ]['busy'] ?? [];
-		} elseif ( ! empty( $calendars ) ) {
-			$first     = reset( $calendars );
-			$busy_data = $first['busy'] ?? [];
-		} else {
-			$busy_data = [];
+		$busy_data = [];
+		foreach ( $calendars as $cal_key => $cal_data ) {
+			$cal_busy = $cal_data['busy'] ?? [];
+			if ( ! empty( $cal_busy ) ) {
+				$busy_data = array_merge( $busy_data, $cal_busy );
+			}
 		}
 
-		// Cache for 5 minutes.
-		set_transient( $cache_key, $busy_data, 5 * MINUTE_IN_SECONDS );
+		// Cache for 1 minute (kept short to avoid stale data with host-level caches).
+		set_transient( $cache_key, $busy_data, MINUTE_IN_SECONDS );
 
 		return $this->parse_busy_response( $busy_data, $tz );
 	}
